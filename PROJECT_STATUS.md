@@ -7,12 +7,12 @@ Default branch: `main`
 ## Current verified state
 
 - The repository contains a Next.js 14 App Router, React, TypeScript, and Tailwind CSS UI prototype.
-- `app/page.tsx` renders a sample operations dashboard, illustrative FE + CRU Events and FTS rotations, a local request form, search, and a Start Call UI action.
+- `app/page.tsx` renders a sample operations dashboard, illustrative FE + CRU Events and FTS rotations, a local request form, search, and a Start Call UI action. The request form now accepts case number, date picker, 30-minute time slots displayed in IST, optional notes, and optional manual engineer selection.
 - Request records live only in React component state. Refreshing the page loses changes.
 - The sample engineers, request IDs, customers, assignment queues, counts, and statuses are demo values; they are not operational data.
 - `README.md` explicitly states that authentication, database persistence, transactional round-robin assignment, scheduled reminders, attendance APIs, and WhatsApp integration are not implemented.
 - `package.json` contains Next.js/React/Tailwind dependencies. MongoDB driver/ODM and authentication libraries are not present in the declared dependencies.
-- No GitHub Actions workflow files or workflow runs were found in the repository at this review.
+- A GitHub Actions workflow now checks TypeScript, unit tests, and a production build; the first run is in progress.
 - No deployment has been verified as part of this review.
 - Repository visibility is public. Never commit secrets, real customer/case data, access tokens, or database connection strings.
 
@@ -21,14 +21,14 @@ Default branch: `main`
 | Capability | Status | Notes |
 |---|---|---|
 | Browser dashboard | Prototype present | Uses hard-coded/demo data and local component state |
-| Team Lead request entry | Partial prototype | Form creates a local demo record only |
-| Separate FE + CRU Events rotation | UI illustration only | No persistent pointer or assignment service |
-| Separate FTS rotation | UI illustration only | No persistent pointer or assignment service |
+| Team Lead request entry | Partial prototype | Form accepts case number, assignment type, date, 30-minute IST time slot, optional notes and optional manual engineer; records remain in browser state only |\n| Assignment notes | Prototype present | Optional notes are displayed beside each assignment; not persistent across refreshes |\n| Date/time entry | Prototype present | Native date picker and 48 half-hour time slots displayed in IST; no server-side timezone validation yet |
+| Separate FE + CRU Events rotation | UI illustration + pure rule module | Not yet persisted or connected to API |
+| Separate FTS rotation | UI illustration + pure rule module | Can use separate rotation state; not yet persisted or connected to API |
 | Assignment confirmation | Not implemented | Requires authenticated Team Lead flow and server-side validation |
 | Team Lead / Manager / Engineer roles | Not implemented | No authentication or authorization found |
 | Engineer availability/scheduling/busy intervals | Not implemented | Dashboard roster is illustrative |
 | Engineer availability confirmation | Not implemented | No persisted confirmations |
-| Manual skip for next three completed assignments | Not implemented | Rule must be specified and tested in the assignment service |
+| Manual skip for next three completed assignments | Pure helper + unit test added | Not yet connected to persistent assignment service; CI result pending |
 | Leave excludes engineer for 24 hours | Not implemented | Requires timezone-aware timestamps and server-side eligibility checks |
 | Scheduled-call reminders | Not implemented | Requires durable scheduler/worker and notification provider |
 | Start Call / Complete Call lifecycle | Partial UI | Start Call only updates local state; completion action/persistence is absent |
@@ -36,7 +36,7 @@ Default branch: `main`
 | WhatsApp notifications | Not implemented | Provider, templates, consent/configuration, retry handling TBD |
 | Reporting, exports, operational dashboards | Partial UI only | Current numbers are computed from in-memory demo data |
 | MongoDB Atlas persistence | Not implemented | No MongoDB dependency or database layer found |
-| Atomic/concurrency-safe assignments | Not implemented | Must be enforced server-side with transactions/conditional updates or equivalent safe locking |
+| Atomic/concurrency-safe assignments | Not implemented | Pure selection logic only; persistence and atomic pointer updates still required |
 | Automated tests / CI | Not found | No workflow files or workflow runs were found |
 | Vercel deployment | Unverified | Do not claim deployment success until a live deployment is checked |
 
@@ -62,8 +62,8 @@ Default branch: `main`
 
 ## Recommended next actions
 
-1. Establish a reliable local validation baseline: clean install, TypeScript check, production build, and lint; fix script/tooling issues and add CI.
-2. Design and implement the persistence foundation and authentication/role authorization before presenting the app as operational.
+1. Finish the first GitHub Actions run for dependency installation, TypeScript check, unit tests, and production build; fix any failures before merging.
+2. Design and implement MongoDB persistence and authentication/role authorization before presenting the app as operational.
 3. Implement the atomic assignment domain service with two distinct rotations and automated tests for concurrent requests, eligibility, three-completed-assignment skip counters, and 24-hour leave exclusion.
 4. Connect the Team Lead request and assignment-confirmation flow to server APIs, then implement call lifecycle and immutable audit events.
 5. Add engineer scheduling/availability, attendance with authorized corrections, reporting/exports, reminders, and WhatsApp notifications in separately tested increments.
@@ -71,6 +71,7 @@ Default branch: `main`
 
 ## Validation log
 
-- 2026-10-17: Reviewed repository metadata, recursive tree, README, package manifest, `app/page.tsx`, `app/globals.css`, `app/layout.tsx`, and `.gitignore` through the GitHub connector.
-- 2026-10-17: Confirmed no GitHub Actions workflow runs are listed for the repository.
-- Not run: local install, lint, typecheck, production build, database tests, browser end-to-end tests, or live deployment verification.
+- 2026-10-17: Reviewed repository metadata, README, package manifest, UI files, TypeScript configuration, and Tailwind configuration through the GitHub connector.
+- 2026-10-17: Added a pure round-robin domain module and Vitest coverage for rotation order, overlapping busy intervals, inactive/leave eligibility, three-completion skip cooldown, and no-eligible behavior.
+- 2026-10-17: Added GitHub Actions validation. An earlier run (38984052380) passed TypeScript and unit tests; production build status was not conclusively verified here. Later UI commits still need fresh CI confirmation.\n- 2026-10-17: Added optional assignment notes and updated the TL request form to use case number, date picker, 30-minute time slots displayed in IST, and show scheduled date in the assignments list. These changes are committed to `feature/validation-baseline`; fresh CI has not yet been verified.
+- Not run locally: install, TypeScript check, unit tests, or production build. CI has passed TypeScript and unit tests; production build is still pending. Database tests, browser end-to-end tests, and live deployment verification have not been run.
