@@ -48,6 +48,13 @@ describe("round-robin assignment rules", () => {
     expect(chooseNextEngineer(base, unavailable, window).assignedEngineerId).toBe("C");
   });
 
+  it("excludes engineers marked absent from assignment eligibility", () => {
+    const absent = team.map((engineer) =>
+      engineer.id === "A" ? { ...engineer, absent: true } : engineer,
+    );
+    expect(chooseNextEngineer(base, absent, window).assignedEngineerId).toBe("B");
+  });
+
   it("makes a manually skipped engineer eligible after three completed assignments", () => {
     const skippedB = skipForNextThreeCompletions(team[1], base);
     const roster = [team[0], skippedB, ...team.slice(2)];
