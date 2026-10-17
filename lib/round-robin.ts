@@ -3,6 +3,8 @@ export type TimeInterval = { startAt: number; endAt: number };
 export type RotationEngineer = {
   id: string;
   active: boolean;
+  /** True when marked absent; absent engineers are excluded from assignment. */
+  absent?: boolean;
   /** Timestamp through which leave excludes the engineer. */
   leaveUntil?: number;
   /** Scheduled calls or busy periods; intervals use [startAt, endAt). */
@@ -48,7 +50,7 @@ export function chooseNextEngineer(
     const index = (startIndex + offset) % count;
     const id = rotation.engineerIds[index];
     const engineer = byId.get(id);
-    if (!engineer || !engineer.active) continue;
+    if (!engineer || !engineer.active || engineer.absent) continue;
     if (engineer.leaveUntil !== undefined && engineer.leaveUntil > window.startAt) continue;
     if (
       engineer.skipUntilCompletion !== undefined &&
