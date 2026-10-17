@@ -3,11 +3,6 @@ import { Db, MongoClient } from "mongodb";
 const uri = process.env.MONGODB_URI;
 const databaseName = process.env.MONGODB_DB ?? "callflow";
 
-if (process.env.NODE_ENV === "production" && !uri) {
-  // Fail closed when a production deployment has not been configured.
-  // The connection is only created when a server API explicitly requests it.
-}
-
 declare global {
   // eslint-disable-next-line no-var
   var callFlowMongoClientPromise: Promise<MongoClient> | undefined;
@@ -15,7 +10,7 @@ declare global {
 
 let clientPromise: Promise<MongoClient> | undefined;
 
-function getClientPromise(): Promise<MongoClient> {
+export function getMongoClient(): Promise<MongoClient> {
   if (!uri) throw new Error("MONGODB_URI is not configured");
   if (process.env.NODE_ENV === "development") {
     global.callFlowMongoClientPromise ??= new MongoClient(uri, {
@@ -32,7 +27,7 @@ function getClientPromise(): Promise<MongoClient> {
 }
 
 export async function getDatabase(): Promise<Db> {
-  const client = await getClientPromise();
+  const client = await getMongoClient();
   return client.db(databaseName);
 }
 
