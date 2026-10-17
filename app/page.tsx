@@ -75,8 +75,9 @@ export default function Home() {
        if (response.ok) {
          const data = await response.json();
          if (!alive) return;
-         setSessionUser(data.user);
          await loadWorkspace();
+         if (!alive) return;
+         setSessionUser(data.user);
        }
      } catch (error) {
        if (alive) setAuthError(error instanceof Error ? error.message : "Unable to connect to CallFlow.");
@@ -92,8 +93,8 @@ export default function Home() {
      const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authEmail, password: authPassword }) });
      const data = await response.json();
      if (!response.ok) throw new Error(data.error ?? "Sign-in failed.");
-     setSessionUser(data.user);
      await loadWorkspace();
+     setSessionUser(data.user);
      setAuthPassword("");
    } catch (error) {
      setAuthError(error instanceof Error ? error.message : "Sign-in failed.");
