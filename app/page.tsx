@@ -11,7 +11,7 @@ const initialEngineers: Engineer[] = [
   "Ashik Abiragam Thangaraj", "Jeromechinnappan Anthonysamy", "Rinas Rafeeque",
   "Muhammed Sahad M B T", "Ramki Gajendran", "Karri Vamsi Krishna",
   "Suthish Ravichandran", "Reinhardt Benjamin Eptha Deva", "Sanjay Rayan Vasanth"
-].map((name, index) => ({ id: `ENG-${String(index + 1).padStart(3, "0")}`, name, role: (index === 0 ? "SSE" : index === 1 ? "Team Lead" : "Engineer") as Engineer["role"], callQueue: index >= 2, ftsQueue: index >= 2, active: true })));
+].map((name, index) => ({ id: `ENG-${String(index + 1).padStart(3, "0")}`, name, role: (index === 0 ? "SSE" : index === 1 ? "Team Lead" : "Engineer") as Engineer["role"], callQueue: index >= 2, ftsQueue: index >= 2, active: true }));
 type Call = { id:string; kind:Kind; customer:string; caseNumber?:string; scheduledDate?:string; engineer:string; time:string; notes?:string; status:"Scheduled"|"In Progress"|"Completed"|"Needs attention"; priority:"Normal"|"High" };
 const timeSlots = Array.from({ length: 48 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 === 0 ? "00" : "30"}`);
 const kindDescriptions: Record<Kind, string> = {
