@@ -28,9 +28,14 @@ export async function GET(request: Request) {
     ]);
     const byId = new Map(engineers.map(engineer => [engineer.id, engineer]));
     const counts = { total: assignments.length, completed: 0, scheduled: 0, inProgress: 0, needsAttention: 0, cancelled: 0, lateOrMissed: 0 };
+    const now = new Date();
     const rows = assignments.map(assignment => {
       const engineer = byId.get(assignment.engineerId);
-      const late = assignment.status !== "Completed" && assignment.status !== "Cancelled" && assignment.scheduledEndAt < new Date();
+      // Completed calls are late when they were finished after their scheduled end.
+      // Open calls are overdue once their scheduled end has passed.
+      const late = assignment.status === "Completed"
+        ? Boolean(assignment.completedAt && assignment.completedAt > assignment.scheduledEndAt)
+        : assignment.status !== "Cancelled" && assignment.scheduledEndAt < now;
       if (assignment.status === "Completed") counts.completed++;
       else if (assignment.status === "Scheduled") counts.scheduled++;
       else if (assignment.status === "In Progress") counts.inProgress++;
