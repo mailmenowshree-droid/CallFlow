@@ -36,7 +36,7 @@ function isEligible(
   if (engineer.role === "Team Lead" || engineer.role === "Manager") return false;
   if (engineer.leaveUntil && engineer.leaveUntil > start) return false;
   if (engineer.role === "SSE" && !manual) return false;
-  if (rotation === "FTS" ? !engineer.ftsQueue : !engineer.callQueue) return false;
+  if (engineer.role !== "SSE" && (rotation === "FTS" ? !engineer.ftsQueue : !engineer.callQueue)) return false;
   return true;
 }
 
@@ -138,6 +138,7 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
         scheduledStartAt: input.scheduledStartAt,
         scheduledEndAt: input.scheduledEndAt,
         engineerId: selected.id,
+        manual,
         status: "Scheduled",
         notes: input.notes?.trim() || undefined,
         createdBy: input.createdBy,
