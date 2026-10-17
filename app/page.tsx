@@ -146,6 +146,8 @@ export default function Home() {
    if(status==="Completed"){const r=rotationFor(call.kind);setCompletedByRotation(p=>({...p,[r]:p[r]+1}));}
  };
  const nav: {label:Area;icon:typeof LayoutDashboard}[]=[{label:"Overview",icon:LayoutDashboard},{label:"Assignments",icon:CalendarDays},{label:"Team",icon:Users},{label:"Reports",icon:FileBarChart2}];
+ if (!authReady) return <main className="minimal-app"><div className="login-panel"><h1>CallFlow</h1><p>Loading your workspace…</p></div></main>;
+ if (!sessionUser) return <main className="minimal-app"><section className="login-panel"><div className="brand-mark"><Activity size={22}/></div><h1>Sign in to CallFlow</h1><p className="muted">Secure access to team operations and assignments.</p><form className="assignment-form" onSubmit={handleLogin}><label>Email<input className="field" type="email" autoComplete="username" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} required/></label><label>Password<input className="field" type="password" autoComplete="current-password" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required/></label>{authError&&<p className="auth-error" role="alert">{authError}</p>}<button className="button primary" type="submit" disabled={authBusy}>{authBusy?"Signing in…":"Sign in"}</button></form></section></main>;
  return <main className="minimal-app">
   <header className="minimal-header">
    <a className="brand" href="#" onClick={e=>{e.preventDefault();setArea("Overview");}}><span className="brand-mark"><Activity size={19}/></span><span>CallFlow</span></a>
