@@ -27,7 +27,7 @@ function isEligible(engineer: EngineerRecord, rotation: RotationKey, start: Date
   if (!engineer.active || engineer.absent) return false;
   if (engineer.role === "Team Lead" || engineer.role === "Manager") return false;
   if (engineer.leaveUntil && engineer.leaveUntil > start) return false;
-  if (engineer.role === "SSE" && rotation !== "FTS") return false;
+  if (engineer.role === "SSE") return false;
   if (rotation === "FTS" ? !engineer.ftsQueue : !engineer.callQueue) return false;
   return start < end;
 }
