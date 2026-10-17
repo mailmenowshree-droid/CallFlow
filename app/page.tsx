@@ -64,10 +64,12 @@ export default function Home() {
  const [newFtsQueue,setNewFtsQueue] = useState(true);
  const today = localDate();
  const loadWorkspace = async () => {
-   const [teamResponse, assignmentResponse] = await Promise.all([fetch("/api/engineers", { cache: "no-store" }), fetch("/api/assignments", { cache: "no-store" })]);
-   if (!teamResponse.ok || !assignmentResponse.ok) throw new Error("Could not load CallFlow data. Check your access and database configuration.");
+   const [teamResponse, assignmentResponse, leaveResponse] = await Promise.all([fetch("/api/engineers", { cache: "no-store" }), fetch("/api/assignments", { cache: "no-store" }), fetch("/api/leaves", { cache: "no-store" })]);
+   if (!teamResponse.ok || !assignmentResponse.ok || !leaveResponse.ok) throw new Error("Could not load CallFlow data. Check your access and database configuration.");
    const teamData = await teamResponse.json();
    const assignmentData = await assignmentResponse.json();
+   const leaveData = await leaveResponse.json();
+   setLeaves(leaveData.leaves ?? []);
    const team: Engineer[] = (teamData.engineers ?? []).map((e: Engineer) => ({ ...e, absent: Boolean(e.absent), attendanceStatus: e.absent ? "Absent" : e.attendanceStatus ?? "Not checked in" }));
    setEngineers(team);
    const byId = new Map(team.map(e => [e.id, e]));
