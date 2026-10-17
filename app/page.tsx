@@ -177,15 +177,14 @@ export default function Home() {
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not add team member."); }
  };
  const skipNext = async (rotation:Rotation) => {
-   const next=getNext(rotation); if(!next){setNotice("No eligible engineer to skip.");return;}
    try {
      const response=await fetch("/api/rotations/skip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rotation})});
      const data=await response.json();
      if(!response.ok) throw new Error(data.error??"Could not apply rotation skip.");
-     setSkipUntil(p=>({...p,[`${rotation}:${next.id}`]:completedByRotation[rotation]+3}));
+     setSkipUntil(p=>({...p,[`${rotation}:${data.engineerId}`]:completedByRotation[rotation]+3}));
      const members=engineers.filter(e=>e.active&&e.role==="Engineer"&&(rotation==="FTS"?e.ftsQueue:e.callQueue));
-     const idx=members.findIndex(e=>e.id===next.id);setRotationIndex(p=>({...p,[rotation]:(idx+1)%Math.max(1,members.length)}));
-     setNotice(`${next.name} skipped for the next three completed assignments in this rotation.`);
+     const idx=members.findIndex(e=>e.id===data.engineerId);setRotationIndex(p=>({...p,[rotation]:(idx+1)%Math.max(1,members.length)}));
+     setNotice(`${data.engineerName} skipped for the next three completed assignments in this rotation.`);
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not apply rotation skip."); }
  };
  const changeStatus = async (call:Call,status:Status) => {
