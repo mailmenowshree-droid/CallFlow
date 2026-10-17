@@ -120,18 +120,22 @@ export default function Home() {
    const matches = `${c.id} ${c.caseNumber} ${c.engineer} ${c.kind} ${c.notes}`.toLowerCase().includes(query.toLowerCase());
    return matches&&(statusFilter==="All"||c.status===statusFilter)&&(assignmentView==="All"||c.date>=today);
  }),[calls,query,statusFilter,assignmentView,today]);
- const createAssignment = (e:FormEvent) => {
+ const createAssignment = async (e:FormEvent) => {
    e.preventDefault();
    if(!caseNumber.trim()||!date||!time){setNotice("Enter a case number, date and time.");return;}
-   const rotation=rotationFor(kind);
-   const assigned=manualEngineer?engineers.find(x=>x.name===manualEngineer&&x.active):getNext(rotation);
-   if(!assigned){setNotice("No eligible engineer is available in this rotation at that time.");return;}
-   const conflict=calls.some(c=>c.engineer===assigned.name&&c.date===date&&c.status!=="Cancelled"&&c.status!=="Completed"&&c.time===time);
-   if(conflict){setNotice("This engineer already has an assignment at that time. Choose another time or engineer.");return;}
-   const item:Call={id:`CF-${1047+calls.length}`,kind,caseNumber:caseNumber.trim(),engineer:assigned.name,date,time,notes:notes.trim(),status:"Scheduled",manual:Boolean(manualEngineer)};
-   setCalls(prev=>[item,...prev]);
-   if(!manualEngineer){const members=engineers.filter(x=>x.active&&x.role==="Engineer"&&(rotation==="FTS"?x.ftsQueue:x.callQueue));const idx=members.findIndex(x=>x.id===assigned.id);setRotationIndex(p=>({...p,[rotation]:(idx+1)%Math.max(1,members.length)}));}
-   setShowNew(false);setCaseNumber("");setNotes("");setManualEngineer("");setNotice("Demo assignment added in this browser only.");
+   const selected=manualEngineer?engineers.find(x=>x.name===manualEngineer&&x.active):undefined;
+   if(manualEngineer&&!selected){setNotice("Choose an active team member for the manual assignment.");return;}
+   const scheduledStartAt=new Date(`${date}T${time}:00+05:30`).toISOString();
+   try {
+     const response=await fetch("/api/assignments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,caseNumber:caseNumber.trim(),scheduledStartAt,notes:notes.trim(),manualEngineerId:selected?.id})});
+     const data=await response.json();
+     if(!response.ok) throw new Error(data.error??"Could not create assignment.");
+     const a:ApiAssignment=data.assignment;
+     const dt=dateTimeParts(a.scheduledStartAt);
+     const item:Call={id:a.id,kind:a.kind,caseNumber:a.caseNumber,engineerId:a.engineerId,engineer:engineers.find(x=>x.id===a.engineerId)?.name??"Assigned engineer",date:dt.date,time:dt.time,notes:a.notes??"",status:a.status,manual:Boolean(selected)};
+     setCalls(prev=>[item,...prev]);
+     setShowNew(false);setCaseNumber("");setNotes("");setManualEngineer("");setNotice(`Assignment created for ${item.engineer}.`);
+   } catch(error) { setNotice(error instanceof Error?error.message:"Could not create assignment."); }
  };
  const skipNext = (rotation:Rotation) => {
    const next=getNext(rotation); if(!next){setNotice("No eligible engineer to skip.");return;}
