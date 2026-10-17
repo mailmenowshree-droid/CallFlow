@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDatabase, getMongoClient } from "@/lib/mongodb";
+import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
 import type { AssignmentRecord, EngineerRecord, RotationKey, RotationRecord } from "@/lib/callflow-types";
 
 export class AssignmentServiceError extends Error {
@@ -52,6 +52,7 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
     throw new AssignmentServiceError("INVALID_REQUEST", "The assignment request is invalid.");
   }
 
+  await ensureCallFlowIndexes();
   const db = await getDatabase();
   const client = await getMongoClient();
   const session = client.startSession();
