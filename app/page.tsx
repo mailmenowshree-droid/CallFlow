@@ -11,14 +11,14 @@ type TeamView = "Roster" | "Attendance" | "Rotations";
 type Engineer = { id: string; name: string; role: Role; callQueue: boolean; ftsQueue: boolean; active: boolean; absent?: boolean };
 type Call = { id: string; kind: Kind; caseNumber: string; engineer: string; date: string; time: string; notes: string; status: Status; manual?: boolean };
 type Rotation = "FE_CRU_EVENT" | "FTS";
-const teamNames = ["Gottam Geethika","Vasista Vardhan Gera","Deepak Anbu","Sakthivel Vellaichamy","Ashik Abiragam Thangaraj","Jeromechinnappan Anthonysamy","Rinas Rafeeque","Muhammed Sahad M B T","Ramki Gajendran","Karri Vamsi Krishna","Suthish Ravichandran","Reinhardt Benjamin Eptha Deva","Sanjay Rayan Vasanth"];
+const teamNames = ["Demo Specialist","Demo Team Lead",...Array.from({length:11},(_,i)=>`Demo Engineer ${String(i+1).padStart(2,"0")}`)];
 const initialEngineers: Engineer[] = teamNames.map((name,i)=>({id:`ENG-${String(i+1).padStart(3,"0")}`,name,role:i===0?"SSE":i===1?"Team Lead":"Engineer",callQueue:i>=2,ftsQueue:i>=2,active:true}));
 const initialCalls: Call[] = [
- {id:"CF-1042",kind:"FE",caseNumber:"DEMO-1042",engineer:"Deepak Anbu",date:localDate(),time:"09:30",notes:"",status:"In Progress"},
- {id:"CF-1043",kind:"CRU",caseNumber:"DEMO-1043",engineer:"Sakthivel Vellaichamy",date:localDate(),time:"10:00",notes:"",status:"Scheduled"},
- {id:"CF-1044",kind:"FTS",caseNumber:"DEMO-1044",engineer:"Ashik Abiragam Thangaraj",date:localDate(),time:"10:30",notes:"",status:"Scheduled"},
- {id:"CF-1045",kind:"FE",caseNumber:"DEMO-1045",engineer:"Rinas Rafeeque",date:localDate(),time:"11:00",notes:"Customer update needed",status:"Needs attention"},
- {id:"CF-1046",kind:"Event",caseNumber:"DEMO-1046",engineer:"Ramki Gajendran",date:localDate(),time:"11:30",notes:"",status:"Completed"}
+ {id:"CF-1042",kind:"FE",caseNumber:"DEMO-1042",engineer:"Demo Engineer 01",date:localDate(),time:"09:30",notes:"",status:"In Progress"},
+ {id:"CF-1043",kind:"CRU",caseNumber:"DEMO-1043",engineer:"Demo Engineer 02",date:localDate(),time:"10:00",notes:"",status:"Scheduled"},
+ {id:"CF-1044",kind:"FTS",caseNumber:"DEMO-1044",engineer:"Demo Engineer 03",date:localDate(),time:"10:30",notes:"",status:"Scheduled"},
+ {id:"CF-1045",kind:"FE",caseNumber:"DEMO-1045",engineer:"Demo Engineer 05",date:localDate(),time:"11:00",notes:"Customer update needed",status:"Needs attention"},
+ {id:"CF-1046",kind:"Event",caseNumber:"DEMO-1046",engineer:"Demo Engineer 07",date:localDate(),time:"11:30",notes:"",status:"Completed"}
 ];
 const slots = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(2,"0")}:${i%2===0?"00":"30"}`);
 const rotationFor = (kind: Kind): Rotation => kind === "FTS" ? "FTS" : "FE_CRU_EVENT";
