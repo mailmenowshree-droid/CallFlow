@@ -32,13 +32,23 @@ export async function getDatabase(): Promise<Db> {
 }
 
 /** Idempotent indexes for the first persistence milestone. */
+let indexesPromise: Promise<void> | undefined;
+
 export async function ensureCallFlowIndexes(): Promise<void> {
-  const db = await getDatabase();
-  await Promise.all([
+  indexesPromise ??= (async () => {
+    const db = await getDatabase();
+    await Promise.all([
     db.collection("engineers").createIndex({ email: 1 }, { unique: true, sparse: true }),
     db.collection("assignments").createIndex({ requestId: 1 }, { unique: true, sparse: true }),
     db.collection("assignments").createIndex({ rotation: 1, status: 1, scheduledStartAt: 1 }),
     db.collection("rotation_state").createIndex({ _id: 1 }, { unique: true }),
     db.collection("audit_events").createIndex({ occurredAt: -1 }),
-  ]);
+    ]);
+  })();
+  try {
+    await indexesPromise;
+  } catch (error) {
+    indexesPromise = undefined;
+    throw error;
+  }
 }
