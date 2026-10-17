@@ -174,3 +174,5 @@ button.metric:hover{border-color:#b9c8f4;background:#fcfdff}
 .oncall-card small{color:#71809a;font-size:11px}
 .oncall-dot{width:10px;height:10px;flex:0 0 10px;border-radius:50%;background:#27966a;box-shadow:0 0 0 4px #dff5e8}
 @media(max-width:760px){.tl-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.oncall-grid{grid-template-columns:1fr}.oncall-card{align-items:flex-start;flex-wrap:wrap}}
+
+.login-panel{width:min(440px,calc(100% - 32px));margin:10vh auto 0;padding:32px;background:#fff;border:1px solid #dfe5ef;border-radius:18px;box-shadow:0 18px 55px #12284a12}.login-panel h1{margin:18px 0 8px;font-size:28px;letter-spacing:-.04em}.login-panel .assignment-form{margin-top:24px}.login-panel .button{width:100%;justify-content:center;margin-top:8px}.auth-error{padding:10px 12px;border-radius:8px;background:#fff0ef;color:#a61b14;font-size:13px}.session-chip{display:flex;align-items:center;gap:12px;margin-left:10px;color:#526079;font-size:13px;white-space:nowrap}@media(max-width:800px){.session-chip span{display:none}.minimal-header{flex-wrap:wrap}.session-chip{margin-left:0}}
