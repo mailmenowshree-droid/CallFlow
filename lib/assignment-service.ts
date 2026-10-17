@@ -21,33 +21,39 @@ export type CreateAssignmentInput = {
   scheduledEndAt: Date;
   notes?: string;
   createdBy: string;
+  /** Explicit TL/Manager choice. SSE is eligible only through this path. */
+  manualEngineerId?: string;
 };
 
-function isEligible(engineer: EngineerRecord, rotation: RotationKey, start: Date, end: Date): boolean {
-  if (!engineer.active || engineer.absent) return false;
+function isEligible(
+  engineer: EngineerRecord,
+  rotation: RotationKey,
+  start: Date,
+  end: Date,
+  manual: boolean,
+): boolean {
+  if (!engineer.active || engineer.absent || start >= end) return false;
   if (engineer.role === "Team Lead" || engineer.role === "Manager") return false;
   if (engineer.leaveUntil && engineer.leaveUntil > start) return false;
-  if (engineer.role === "SSE") return false;
+  if (engineer.role === "SSE" && !manual) return false;
   if (rotation === "FTS" ? !engineer.ftsQueue : !engineer.callQueue) return false;
-  return start < end;
+  return true;
 }
 
-/**
- * Persist assignment, advance the independent rotation pointer, and write an
- * audit event in one MongoDB transaction. Call only behind authenticated,
- * role-authorized server code.
- */
+/** Persist assignment, pointer changes, and audit in a single transaction. */
 export async function createAssignment(input: CreateAssignmentInput): Promise<AssignmentRecord> {
   if (
-    !input.requestId?.trim() ||
-    !input.caseNumber?.trim() ||
+    !input.requestId?.trim() || input.requestId.length > 128 ||
+    !input.caseNumber?.trim() || input.caseNumber.length > 128 ||
     !input.createdBy?.trim() ||
     !(input.scheduledStartAt instanceof Date) ||
     !(input.scheduledEndAt instanceof Date) ||
     Number.isNaN(input.scheduledStartAt.getTime()) ||
     Number.isNaN(input.scheduledEndAt.getTime()) ||
     input.scheduledEndAt <= input.scheduledStartAt ||
-    (input.rotation === "FTS" ? input.kind !== "FTS" : input.kind === "FTS")
+    input.scheduledEndAt.getTime() - input.scheduledStartAt.getTime() > 12 * 60 * 60 * 1000 ||
+    (input.rotation === "FTS" ? input.kind !== "FTS" : input.kind === "FTS") ||
+    (input.notes !== undefined && input.notes.length > 4000)
   ) {
     throw new AssignmentServiceError("INVALID_REQUEST", "The assignment request is invalid.");
   }
@@ -62,53 +68,64 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
   try {
     await session.withTransaction(async () => {
       const assignments = db.collection<AssignmentRecord>("assignments");
-      const existing = await assignments.findOne({ requestId: input.requestId }, { session });
-      if (existing) {
+      if (await assignments.findOne({ requestId: input.requestId }, { session })) {
         throw new AssignmentServiceError("DUPLICATE_REQUEST", "This request ID has already been used.");
       }
 
-      const rotation = await db.collection<RotationRecord>("rotation_state").findOne(
-        { _id: input.rotation },
-        { session },
-      );
+      const rotations = db.collection<RotationRecord>("rotation_state");
+      const rotation = await rotations.findOne({ _id: input.rotation }, { session });
       if (!rotation || rotation.engineerIds.length === 0) {
         throw new AssignmentServiceError("NO_ELIGIBLE_ENGINEER", "No eligible engineer is configured for this rotation.");
       }
 
-      const engineerIds = rotation.engineerIds;
-      const engineers = await db.collection<EngineerRecord>("engineers").find(
-        { id: { $in: engineerIds } },
-        { session },
-      ).toArray();
-      const byId = new Map(engineers.map((engineer) => [engineer.id, engineer]));
-      const startIndex = ((rotation.nextIndex % engineerIds.length) + engineerIds.length) % engineerIds.length;
-      let selectedIndex = -1;
+      const engineersCollection = db.collection<EngineerRecord>("engineers");
       let selected: EngineerRecord | undefined;
+      let selectedIndex = -1;
+      const manual = Boolean(input.manualEngineerId);
 
-      for (let offset = 0; offset < engineerIds.length; offset += 1) {
-        const index = (startIndex + offset) % engineerIds.length;
-        const engineer = byId.get(engineerIds[index]);
-        if (!engineer || !isEligible(engineer, input.rotation, input.scheduledStartAt, input.scheduledEndAt)) continue;
-        if (
-          engineer.skipUntilCompletion !== undefined &&
-          rotation.completedAssignments < engineer.skipUntilCompletion
-        ) continue;
+      if (manual) {
+        selected = await engineersCollection.findOne({ id: input.manualEngineerId }, { session }) ?? undefined;
+        if (!selected || !isEligible(selected, input.rotation, input.scheduledStartAt, input.scheduledEndAt, true)) {
+          throw new AssignmentServiceError("NO_ELIGIBLE_ENGINEER", "The manually selected engineer is not eligible for this assignment.");
+        }
+        if (selected.role !== "SSE" && rotation.engineerIds.includes(selected.id)) {
+          selectedIndex = rotation.engineerIds.indexOf(selected.id);
+        }
+      } else {
+        const engineers = await engineersCollection.find({ id: { $in: rotation.engineerIds } }, { session }).toArray();
+        const byId = new Map(engineers.map((engineer) => [engineer.id, engineer]));
+        const startIndex = ((rotation.nextIndex % rotation.engineerIds.length) + rotation.engineerIds.length) % rotation.engineerIds.length;
 
-        const busy = await assignments.findOne({
-          engineerId: engineer.id,
-          status: { $in: ["Scheduled", "In Progress", "Needs attention"] },
-          scheduledStartAt: { $lt: input.scheduledEndAt },
-          scheduledEndAt: { $gt: input.scheduledStartAt },
-        }, { session });
-        if (busy) continue;
-
-        selected = engineer;
-        selectedIndex = index;
-        break;
+        for (let offset = 0; offset < rotation.engineerIds.length; offset += 1) {
+          const index = (startIndex + offset) % rotation.engineerIds.length;
+          const engineer = byId.get(rotation.engineerIds[index]);
+          if (!engineer || !isEligible(engineer, input.rotation, input.scheduledStartAt, input.scheduledEndAt, false)) continue;
+          if (engineer.skipUntilCompletion !== undefined && rotation.completedAssignments < engineer.skipUntilCompletion) continue;
+          const busy = await assignments.findOne({
+            engineerId: engineer.id,
+            status: { $in: ["Scheduled", "In Progress", "Needs attention"] },
+            scheduledStartAt: { $lt: input.scheduledEndAt },
+            scheduledEndAt: { $gt: input.scheduledStartAt },
+          }, { session });
+          if (busy) continue;
+          selected = engineer;
+          selectedIndex = index;
+          break;
+        }
       }
 
-      if (!selected || selectedIndex < 0) {
+      if (!selected) {
         throw new AssignmentServiceError("NO_ELIGIBLE_ENGINEER", "No eligible engineer is available in this time window.");
+      }
+
+      const busy = await assignments.findOne({
+        engineerId: selected.id,
+        status: { $in: ["Scheduled", "In Progress", "Needs attention"] },
+        scheduledStartAt: { $lt: input.scheduledEndAt },
+        scheduledEndAt: { $gt: input.scheduledStartAt },
+      }, { session });
+      if (busy) {
+        throw new AssignmentServiceError("NO_ELIGIBLE_ENGINEER", "The selected engineer already has an overlapping assignment.");
       }
 
       const assignment: AssignmentRecord = {
@@ -126,22 +143,30 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
         createdAt: now,
         updatedAt: now,
       };
-
       await assignments.insertOne(assignment, { session });
-      const update = await db.collection<RotationRecord>("rotation_state").updateOne(
-        { _id: input.rotation, nextIndex: rotation.nextIndex, completedAssignments: rotation.completedAssignments },
-        { $set: { nextIndex: (selectedIndex + 1) % engineerIds.length, updatedAt: now } },
-        { session },
-      );
-      if (update.modifiedCount !== 1) {
-        throw new Error("Rotation state changed during assignment; retry the request.");
+
+      // Manual assignments do not move the automatic pointer. A manual choice
+      // of an ordinary rotation member does not silently alter round-robin order.
+      if (!manual) {
+        const update = await rotations.updateOne(
+          { _id: input.rotation, nextIndex: rotation.nextIndex, completedAssignments: rotation.completedAssignments },
+          { $set: { nextIndex: (selectedIndex + 1) % rotation.engineerIds.length, updatedAt: now } },
+          { session },
+        );
+        if (update.modifiedCount !== 1) throw new Error("Rotation state changed concurrently; retry the request.");
       }
+
       await db.collection("audit_events").insertOne({
-        eventType: "ASSIGNMENT_CREATED",
+        eventType: manual ? "ASSIGNMENT_MANUALLY_CREATED" : "ASSIGNMENT_CREATED",
         entityId: assignment.id,
         actorId: input.createdBy,
         occurredAt: now,
-        metadata: { rotation: input.rotation, engineerId: selected.id, caseNumber: assignment.caseNumber },
+        metadata: {
+          rotation: input.rotation,
+          engineerId: selected.id,
+          caseNumber: assignment.caseNumber,
+          assignmentMode: manual ? "manual" : "round_robin",
+        },
       }, { session });
       created = assignment;
     }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
