@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Activity, CalendarDays, CheckCircle2, Clock3, FileBarChart2, LayoutDashboard, Plus, Search, Users, X, SkipForward } from "lucide-react";
 
 type Kind = "FE" | "CRU" | "Event" | "FTS";
@@ -8,8 +8,8 @@ type Status = "Scheduled" | "In Progress" | "Completed" | "Needs attention" | "C
 type Role = "Engineer" | "SSE" | "Team Lead" | "Manager";
 type Area = "Overview" | "Assignments" | "Team" | "Reports";
 type TeamView = "Roster" | "Attendance" | "Rotations";
-type Engineer = { id: string; name: string; role: Role; callQueue: boolean; ftsQueue: boolean; active: boolean; absent?: boolean };
-type Call = { id: string; kind: Kind; caseNumber: string; engineer: string; date: string; time: string; notes: string; status: Status; manual?: boolean };
+type Engineer = { id: string; name: string; role: Role; callQueue: boolean; ftsQueue: boolean; active: boolean; absent?: boolean; leaveUntil?: string };
+type Call = { id: string; kind: Kind; caseNumber: string; engineer: string; engineerId?: string; date: string; time: string; notes: string; status: Status; manual?: boolean };\ntype SessionUser = { id: string; email: string; name: string; role: Role };\ntype ApiAssignment = { id: string; kind: Kind; caseNumber: string; engineerId: string; scheduledStartAt: string; scheduledEndAt: string; notes?: string; status: Status; manual?: boolean };\nfunction dateTimeParts(iso: string) { const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)); const p = Object.fromEntries(parts.map(x => [x.type, x.value])); return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` }; }
 type Rotation = "FE_CRU_EVENT" | "FTS";
 const teamNames = ["Demo Specialist","Demo Team Lead",...Array.from({length:11},(_,i)=>`Demo Engineer ${String(i+1).padStart(2,"0")}`)];
 const initialEngineers: Engineer[] = teamNames.map((name,i)=>({id:`ENG-${String(i+1).padStart(3,"0")}`,name,role:i===0?"SSE":i===1?"Team Lead":"Engineer",callQueue:i>=2,ftsQueue:i>=2,active:true}));
@@ -51,6 +51,55 @@ export default function Home() {
  const [newCallQueue,setNewCallQueue] = useState(true);
  const [newFtsQueue,setNewFtsQueue] = useState(true);
  const today = localDate();
+ const loadWorkspace = async () => {
+   const [teamResponse, assignmentResponse] = await Promise.all([fetch("/api/engineers", { cache: "no-store" }), fetch("/api/assignments", { cache: "no-store" })]);
+   if (!teamResponse.ok || !assignmentResponse.ok) throw new Error("Could not load CallFlow data. Check your access and database configuration.");
+   const teamData = await teamResponse.json();
+   const assignmentData = await assignmentResponse.json();
+   const team: Engineer[] = (teamData.engineers ?? []).map((e: Engineer) => ({ ...e, absent: Boolean(e.absent) }));
+   setEngineers(team);
+   const byId = new Map(team.map(e => [e.id, e]));
+   setCalls((assignmentData.assignments ?? []).map((a: ApiAssignment) => {
+     const dt = dateTimeParts(a.scheduledStartAt);
+     return { id: a.id, kind: a.kind, caseNumber: a.caseNumber, engineerId: a.engineerId, engineer: byId.get(a.engineerId)?.name ?? "Unassigned member", date: dt.date, time: dt.time, notes: a.notes ?? "", status: a.status, manual: Boolean(a.manual) };
+   }));
+ };
+ useEffect(() => {
+   let alive = true;
+   (async () => {
+     try {
+       const response = await fetch("/api/auth/me", { cache: "no-store" });
+       if (response.ok) {
+         const data = await response.json();
+         if (!alive) return;
+         setSessionUser(data.user);
+         await loadWorkspace();
+       }
+     } catch (error) {
+       if (alive) setAuthError(error instanceof Error ? error.message : "Unable to connect to CallFlow.");
+     } finally {
+       if (alive) setAuthReady(true);
+     }
+   })();
+   return () => { alive = false; };
+ }, []);
+ const handleLogin = async (e: FormEvent) => {
+   e.preventDefault(); setAuthBusy(true); setAuthError("");
+   try {
+     const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authEmail, password: authPassword }) });
+     const data = await response.json();
+     if (!response.ok) throw new Error(data.error ?? "Sign-in failed.");
+     setSessionUser(data.user);
+     await loadWorkspace();
+     setAuthPassword("");
+   } catch (error) {
+     setAuthError(error instanceof Error ? error.message : "Sign-in failed.");
+   } finally { setAuthBusy(false); }
+ };
+ const handleLogout = async () => {
+   await fetch("/api/auth/logout", { method: "POST" });
+   setSessionUser(null); setEngineers([]); setCalls([]);
+ };
  const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5);
  const escalatedCalls = thresholdCalls.filter(c=>minutesLate(c)>=10);
  const getNext = (rotation:Rotation) => {
