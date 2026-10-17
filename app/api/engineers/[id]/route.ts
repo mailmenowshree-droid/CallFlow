@@ -51,6 +51,7 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
           role: nextRole,
           active: (value.active as boolean | undefined) ?? current.active,
           absent: (value.absent as boolean | undefined) ?? current.absent ?? false,
+          attendanceStatus: value.absent === true ? "Absent" : value.absent === false && current.absent ? "Not checked in" : current.attendanceStatus ?? "Not checked in",
           callQueue: nextRole === "Engineer" && callQueue,
           ftsQueue: nextRole === "Engineer" && ftsQueue,
           updatedAt: now,
