@@ -177,6 +177,15 @@ export default function Home() {
      setNotice(action==="check-in"?"Attendance marked present.":"Attendance check-out recorded.");
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not update attendance."); }
  };
+ const submitLeave = async (e:FormEvent) => {
+   e.preventDefault();
+   try {
+     const response = await fetch("/api/leaves", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startDate: leaveStart, endDate: leaveEnd, reason: leaveReason }) });
+     const data = await response.json();
+     if (!response.ok) throw new Error(data.error ?? "Could not submit leave.");
+     setLeaves(prev => [data.leave, ...prev]); setLeaveReason(""); setNotice("Leave request submitted for manager review.");
+   } catch (error) { setNotice(error instanceof Error ? error.message : "Could not submit leave."); }
+ };
  const addEngineer = async (e:FormEvent) => {
    e.preventDefault();
    const name=newName.trim();
