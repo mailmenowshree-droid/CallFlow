@@ -14,11 +14,11 @@ type Rotation = "FE_CRU_EVENT" | "FTS";
 const teamNames = ["Gottam Geethika","Vasista Vardhan Gera","Deepak Anbu","Sakthivel Vellaichamy","Ashik Abiragam Thangaraj","Jeromechinnappan Anthonysamy","Rinas Rafeeque","Muhammed Sahad M B T","Ramki Gajendran","Karri Vamsi Krishna","Suthish Ravichandran","Reinhardt Benjamin Eptha Deva","Sanjay Rayan Vasanth"];
 const initialEngineers: Engineer[] = teamNames.map((name,i)=>({id:`ENG-${String(i+1).padStart(3,"0")}`,name,role:i===0?"SSE":i===1?"Team Lead":"Engineer",callQueue:i>=2,ftsQueue:i>=2,active:true}));
 const initialCalls: Call[] = [
- {id:"CF-1042",kind:"FE",caseNumber:"DEMO-1042",engineer:"Deepak Anbu",date:"2026-10-17",time:"09:30",notes:"",status:"In Progress"},
- {id:"CF-1043",kind:"CRU",caseNumber:"DEMO-1043",engineer:"Sakthivel Vellaichamy",date:"2026-10-17",time:"10:00",notes:"",status:"Scheduled"},
- {id:"CF-1044",kind:"FTS",caseNumber:"DEMO-1044",engineer:"Ashik Abiragam Thangaraj",date:"2026-10-17",time:"10:30",notes:"",status:"Scheduled"},
- {id:"CF-1045",kind:"FE",caseNumber:"DEMO-1045",engineer:"Rinas Rafeeque",date:"2026-10-17",time:"11:00",notes:"Customer update needed",status:"Needs attention"},
- {id:"CF-1046",kind:"Event",caseNumber:"DEMO-1046",engineer:"Ramki Gajendran",date:"2026-10-17",time:"11:30",notes:"",status:"Completed"}
+ {id:"CF-1042",kind:"FE",caseNumber:"DEMO-1042",engineer:"Deepak Anbu",date:localDate(),time:"09:30",notes:"",status:"In Progress"},
+ {id:"CF-1043",kind:"CRU",caseNumber:"DEMO-1043",engineer:"Sakthivel Vellaichamy",date:localDate(),time:"10:00",notes:"",status:"Scheduled"},
+ {id:"CF-1044",kind:"FTS",caseNumber:"DEMO-1044",engineer:"Ashik Abiragam Thangaraj",date:localDate(),time:"10:30",notes:"",status:"Scheduled"},
+ {id:"CF-1045",kind:"FE",caseNumber:"DEMO-1045",engineer:"Rinas Rafeeque",date:localDate(),time:"11:00",notes:"Customer update needed",status:"Needs attention"},
+ {id:"CF-1046",kind:"Event",caseNumber:"DEMO-1046",engineer:"Ramki Gajendran",date:localDate(),time:"11:30",notes:"",status:"Completed"}
 ];
 const slots = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(2,"0")}:${i%2===0?"00":"30"}`);
 const rotationFor = (kind: Kind): Rotation => kind === "FTS" ? "FTS" : "FE_CRU_EVENT";
@@ -71,7 +71,6 @@ export default function Home() {
    const rotation=rotationFor(kind);
    const assigned=manualEngineer?engineers.find(x=>x.name===manualEngineer&&x.active):getNext(rotation);
    if(!assigned){setNotice("No eligible engineer is available in this rotation at that time.");return;}
-   const end=slots[Math.min(slots.indexOf(time)+1,47)];
    const conflict=calls.some(c=>c.engineer===assigned.name&&c.date===date&&c.status!=="Cancelled"&&c.status!=="Completed"&&c.time===time);
    if(conflict){setNotice("This engineer already has an assignment at that time. Choose another time or engineer.");return;}
    const item:Call={id:`CF-${1047+calls.length}`,kind,caseNumber:caseNumber.trim(),engineer:assigned.name,date,time,notes:notes.trim(),status:"Scheduled"};
