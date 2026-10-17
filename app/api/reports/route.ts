@@ -12,7 +12,10 @@ export async function GET(request: Request) {
     await requireSession(["Team Lead", "Manager"]);
     await ensureCallFlowIndexes();
     const url = new URL(request.url);
-    const start = url.searchParams.get("start") || new Date().toISOString().slice(0, 10);
+    const todayParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const todayValues = Object.fromEntries(todayParts.map(part => [part.type, part.value]));
+    const today = `${todayValues.year}-${todayValues.month}-${todayValues.day}`;
+    const start = url.searchParams.get("start") || today;
     const end = url.searchParams.get("end") || start;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) {
       return NextResponse.json({ error: "Choose a valid report date range." }, { status: 400, headers });
