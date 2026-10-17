@@ -7,6 +7,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
 
+function isValidDateKey(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + "T12:00:00Z");
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 export async function GET(request: Request) {
   try {
     await requireSession(["Team Lead", "Manager"]);
@@ -17,7 +23,7 @@ export async function GET(request: Request) {
     const today = `${todayValues.year}-${todayValues.month}-${todayValues.day}`;
     const start = url.searchParams.get("start") || today;
     const end = url.searchParams.get("end") || start;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) {
+    if (!isValidDateKey(start) || !isValidDateKey(end) || end < start) {
       return NextResponse.json({ error: "Choose a valid report date range." }, { status: 400, headers });
     }
     const db = await getDatabase();
