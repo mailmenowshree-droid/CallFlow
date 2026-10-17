@@ -24,7 +24,8 @@ const slots = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(
 const rotationFor = (kind: Kind): Rotation => kind === "FTS" ? "FTS" : "FE_CRU_EVENT";
 const statusClass: Record<Status,string> = {"Scheduled":"status-blue","In Progress":"status-purple","Completed":"status-green","Needs attention":"status-red","Cancelled":"status-muted"};
 function Pill({children,status}:{children:React.ReactNode;status?:Status}) { return <span className={`status-pill ${status?statusClass[status]:"status-muted"}`}>{children}</span>; }
-function localDate() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function localDate() { const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()); const p=Object.fromEntries(parts.map(x=>[x.type,x.value])); return `${p.year}-${p.month}-${p.day}`; }
+function minutesLate(call:Call) { const nowParts=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()); const p=Object.fromEntries(nowParts.map(x=>[x.type,x.value])); const now=Number(p.hour)*60+Number(p.minute); const scheduled=Number(call.time.slice(0,2))*60+Number(call.time.slice(3,5)); return call.date<localDate()?1440:call.date>localDate()?-1440:now-scheduled; }
 
 export default function Home() {
  const [area,setArea] = useState<Area>("Overview");
@@ -49,7 +50,7 @@ export default function Home() {
  const [newRole,setNewRole] = useState<Role>("Engineer");
  const [newCallQueue,setNewCallQueue] = useState(true);
  const [newFtsQueue,setNewFtsQueue] = useState(true);
- const today = localDate();
+ const today = localDate();\n const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5);\n const escalatedCalls = thresholdCalls.filter(c=>minutesLate(c)>=10);
  const getNext = (rotation:Rotation) => {
    const members = engineers.filter(e=>e.active&&!e.absent&&e.role==="Engineer"&&(rotation==="FTS"?e.ftsQueue:e.callQueue));
    if(!members.length) return undefined;
@@ -99,6 +100,7 @@ export default function Home() {
   </header>
   <div className="page-wrap">
    {notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
+   {area==="Overview"&&thresholdCalls.length>0&&<div className={escalatedCalls.length?"alert-banner alert-critical":"alert-banner alert-warning"} role="alert"><span className="alert-symbol"><Activity size={19}/></span><div className="alert-copy"><strong>{escalatedCalls.length? "Escalation required":"Calls running late"}</strong><span>{escalatedCalls.length? `${escalatedCalls.length} call(s) have crossed the 10-minute escalation threshold.`:`${thresholdCalls.length} call(s) are at least 5 minutes past their scheduled time.`}</span></div><button className="alert-action" onClick={()=>{setArea("Assignments");setStatusFilter("All");setQuery("");}}>Review calls</button></div>}
    {area==="Overview"&&<>
     <div className="page-heading"><div><p className="eyebrow">{today}</p><h1>Overview</h1><p className="muted">Today's call assignment activity.</p></div><button className="button primary" onClick={()=>setShowNew(true)}><Plus size={16}/> New assignment</button></div>
     <section className="metric-grid">
@@ -132,5 +134,5 @@ export default function Home() {
 
 function CallTable({calls,onStatus,emptyMessage="No assignments yet."}:{calls:Call[];onStatus:(call:Call,status:Status)=>void;emptyMessage?:string}) {
  if(!calls.length)return <p className="empty">{emptyMessage}</p>;
- return <div className="table-scroll"><table className="data-table"><thead><tr><th>Case / assignment</th><th>Type</th><th>Assigned engineer</th><th>Scheduled (IST)</th><th>Notes</th><th>Status</th><th>Update</th></tr></thead><tbody>{calls.map(c=><tr key={c.id}><td><strong>{c.caseNumber}</strong><small>{c.id}</small></td><td>{c.kind}</td><td>{c.engineer}</td><td><span>{c.date}</span><small>{new Date(`2000-01-01T${c.time}:00+05:30`).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"})}</small></td><td className="notes-cell">{c.notes||"—"}</td><td><Pill status={c.status}>{c.status}</Pill></td><td>{c.status==="Completed"||c.status==="Cancelled"?<span className="muted">—</span>:<select aria-label={`Update status for ${c.caseNumber}`} value={c.status} onChange={e=>onStatus(c,e.target.value as Status)}><option>Scheduled</option><option>In Progress</option><option>Completed</option><option>Needs attention</option><option>Cancelled</option></select>}</td></tr>)}</tbody></table></div>;
+ return <div className="table-scroll"><table className="data-table"><thead><tr><th>Case / assignment</th><th>Type</th><th>Assigned engineer</th><th>Scheduled (IST)</th><th>Notes</th><th>Status</th><th>Update</th></tr></thead><tbody>{calls.map(c=><tr key={c.id} className={c.status==="Needs attention"?"attention-row":c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=10?"critical-row":c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5?"warning-row":""}><td><strong>{c.caseNumber}</strong><small>{c.id}</small></td><td>{c.kind}</td><td>{c.engineer}</td><td><span>{c.date}</span><small>{new Date(`2000-01-01T${c.time}:00+05:30`).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"})}</small></td><td className="notes-cell">{c.notes||"—"}</td><td><Pill status={c.status}>{c.status}</Pill></td><td>{c.status==="Completed"||c.status==="Cancelled"?<span className="muted">—</span>:<select aria-label={`Update status for ${c.caseNumber}`} value={c.status} onChange={e=>onStatus(c,e.target.value as Status)}><option>Scheduled</option><option>In Progress</option><option>Completed</option><option>Needs attention</option><option>Cancelled</option></select>}</td></tr>)}</tbody></table></div>;
 }
