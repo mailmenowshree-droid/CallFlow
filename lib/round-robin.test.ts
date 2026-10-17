@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chooseNextEngineer,
+  hasScheduleConflict,
   recordCompletedAssignment,
   skipForNextThreeCompletions,
   type RotationEngineer,
@@ -37,6 +38,12 @@ describe("round-robin assignment rules", () => {
         : engineer,
     );
     expect(chooseNextEngineer(base, notBusy, window).assignedEngineerId).toBe("A");
+  });
+
+  it("flags an Event that overlaps an engineer's pre-scheduled call", () => {
+    const scheduledCalls = [{ startAt: 1_500, endAt: 2_500 }];
+    expect(hasScheduleConflict(scheduledCalls, { startAt: 2_000, endAt: 3_000 })).toBe(true);
+    expect(hasScheduleConflict(scheduledCalls, { startAt: 2_500, endAt: 3_000 })).toBe(false);
   });
 
   it("excludes inactive engineers and engineers on leave through the scheduled start", () => {
