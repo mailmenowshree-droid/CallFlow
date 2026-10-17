@@ -22,7 +22,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireSession(["Engineer", "SSE"]);
+    const user = await requireSession(["Engineer", "SSE", "Team Lead", "Manager"]);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || typeof body.startDate !== "string" || typeof body.endDate !== "string" || typeof body.reason !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate) || body.endDate < body.startDate || !body.reason.trim()) {
       return NextResponse.json({ error: "Choose a valid date range and enter a reason." }, { status: 400, headers });
