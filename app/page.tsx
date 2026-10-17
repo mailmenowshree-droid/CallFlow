@@ -14,15 +14,6 @@ type SessionUser = { id: string; email: string; name: string; role: Role };
 type ApiAssignment = { id: string; kind: Kind; caseNumber: string; engineerId: string; scheduledStartAt: string; scheduledEndAt: string; notes?: string; status: Status; manual?: boolean };
 function dateTimeParts(iso: string) { const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)); const p = Object.fromEntries(parts.map(x => [x.type, x.value])); return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` }; }
 type Rotation = "FE_CRU_EVENT" | "FTS";
-const teamNames = ["Demo Specialist","Demo Team Lead",...Array.from({length:11},(_,i)=>`Demo Engineer ${String(i+1).padStart(2,"0")}`)];
-const initialEngineers: Engineer[] = teamNames.map((name,i)=>({id:`ENG-${String(i+1).padStart(3,"0")}`,name,role:i===0?"SSE":i===1?"Team Lead":"Engineer",callQueue:i>=2,ftsQueue:i>=2,active:true}));
-const initialCalls: Call[] = [
- {id:"CF-1042",kind:"FE",caseNumber:"DEMO-1042",engineer:"Demo Engineer 01",date:localDate(),time:"09:30",notes:"",status:"In Progress"},
- {id:"CF-1043",kind:"CRU",caseNumber:"DEMO-1043",engineer:"Demo Engineer 02",date:localDate(),time:"10:00",notes:"",status:"Scheduled"},
- {id:"CF-1044",kind:"FTS",caseNumber:"DEMO-1044",engineer:"Demo Engineer 03",date:localDate(),time:"10:30",notes:"",status:"Scheduled"},
- {id:"CF-1045",kind:"FE",caseNumber:"DEMO-1045",engineer:"Demo Engineer 05",date:localDate(),time:"11:00",notes:"Customer update needed",status:"Needs attention"},
- {id:"CF-1046",kind:"Event",caseNumber:"DEMO-1046",engineer:"Demo Engineer 07",date:localDate(),time:"11:30",notes:"",status:"Completed"}
-];
 const slots = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(2,"0")}:${i%2===0?"00":"30"}`);
 const rotationFor = (kind: Kind): Rotation => kind === "FTS" ? "FTS" : "FE_CRU_EVENT";
 const statusClass: Record<Status,string> = {"Scheduled":"status-blue","In Progress":"status-purple","Completed":"status-green","Needs attention":"status-red","Cancelled":"status-muted"};
