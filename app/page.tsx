@@ -152,7 +152,7 @@ export default function Home() {
   <header className="minimal-header">
    <a className="brand" href="#" onClick={e=>{e.preventDefault();setArea("Overview");}}><span className="brand-mark"><Activity size={19}/></span><span>CallFlow</span></a>
    <nav className="top-nav" aria-label="Main navigation">{nav.map(n=><button key={n.label} onClick={()=>setArea(n.label)} className={area===n.label?"selected":""}>{n.label}</button>)}</nav>
-   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button>
+   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>{sessionUser.name}</span><button className="text-button" onClick={handleLogout}>Sign out</button></div>
   </header>
   <div className="page-wrap">
    {notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
