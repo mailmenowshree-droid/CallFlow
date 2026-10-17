@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { MongoClient, ObjectId } from "mongodb";
-import { getDatabase } from "@/lib/mongodb";
+import { getDatabase, getMongoClient } from "@/lib/mongodb";
 import type { AssignmentRecord, EngineerRecord, RotationKey, RotationRecord } from "@/lib/callflow-types";
 
 export class AssignmentServiceError extends Error {
   constructor(
-    public readonly code: "INVALID_REQUEST" | "NO_ELIGIBLE_ENGINEER" | "DUPLICATE_REQUEST" | "NOT_FOUND",
+    public readonly code: "INVALID_REQUEST" | "NO_ELIGIBLE_ENGINEER" | "DUPLICATE_REQUEST",
     message: string,
   ) {
     super(message);
@@ -24,24 +23,25 @@ export type CreateAssignmentInput = {
   createdBy: string;
 };
 
-function isEligible(engineer: EngineerRecord, start: Date, end: Date): boolean {
+function isEligible(engineer: EngineerRecord, rotation: RotationKey, start: Date, end: Date): boolean {
   if (!engineer.active || engineer.absent) return false;
   if (engineer.role === "Team Lead" || engineer.role === "Manager") return false;
   if (engineer.leaveUntil && engineer.leaveUntil > start) return false;
-  if (engineer.role === "SSE" && engineer.callQueue) return false;
-  return !(start >= end);
+  if (engineer.role === "SSE" && rotation !== "FTS") return false;
+  if (rotation === "FTS" ? !engineer.ftsQueue : !engineer.callQueue) return false;
+  return start < end;
 }
 
 /**
- * Persists an assignment and advances its rotation pointer in one MongoDB
- * transaction. MongoDB Atlas replica-set deployments support transactions.
- * Caller must be authenticated and authorized before invoking this service.
+ * Persist assignment, advance the independent rotation pointer, and write an
+ * audit event in one MongoDB transaction. Call only behind authenticated,
+ * role-authorized server code.
  */
 export async function createAssignment(input: CreateAssignmentInput): Promise<AssignmentRecord> {
   if (
-    !input.requestId.trim() ||
-    !input.caseNumber.trim() ||
-    !input.createdBy.trim() ||
+    !input.requestId?.trim() ||
+    !input.caseNumber?.trim() ||
+    !input.createdBy?.trim() ||
     !(input.scheduledStartAt instanceof Date) ||
     !(input.scheduledEndAt instanceof Date) ||
     Number.isNaN(input.scheduledStartAt.getTime()) ||
@@ -53,12 +53,8 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
   }
 
   const db = await getDatabase();
-  const client = new MongoClient(process.env.MONGODB_URI!);
-  // Use the shared connection's client through the exported helper below instead
-  // of opening a second client. This placeholder is replaced before use.
-  await client.close();
-  const clientForSession = await import("@/lib/mongodb").then((m) => m.getMongoClient());
-  const session = clientForSession.startSession();
+  const client = await getMongoClient();
+  const session = client.startSession();
   const now = new Date();
   let created: AssignmentRecord | undefined;
 
@@ -91,9 +87,12 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
       for (let offset = 0; offset < engineerIds.length; offset += 1) {
         const index = (startIndex + offset) % engineerIds.length;
         const engineer = byId.get(engineerIds[index]);
-        if (!engineer || !isEligible(engineer, input.scheduledStartAt, input.scheduledEndAt)) continue;
-        const queueEnabled = input.rotation === "FTS" ? engineer.ftsQueue : engineer.callQueue;
-        if (!queueEnabled) continue;
+        if (!engineer || !isEligible(engineer, input.rotation, input.scheduledStartAt, input.scheduledEndAt)) continue;
+        if (
+          engineer.skipUntilCompletion !== undefined &&
+          rotation.completedAssignments < engineer.skipUntilCompletion
+        ) continue;
+
         const busy = await assignments.findOne({
           engineerId: engineer.id,
           status: { $in: ["Scheduled", "In Progress", "Needs attention"] },
@@ -101,10 +100,7 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
           scheduledEndAt: { $gt: input.scheduledStartAt },
         }, { session });
         if (busy) continue;
-        if (
-          engineer.skipUntilCompletion !== undefined &&
-          rotation.completedAssignments < engineer.skipUntilCompletion
-        ) continue;
+
         selected = engineer;
         selectedIndex = index;
         break;
@@ -156,7 +152,6 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
   return created;
 }
 
-/** Initialize a rotation once. Does not overwrite existing pointer state. */
 export async function initializeRotation(rotation: RotationKey, engineerIds: string[]): Promise<void> {
   const db = await getDatabase();
   await db.collection<RotationRecord>("rotation_state").updateOne(
@@ -164,9 +159,4 @@ export async function initializeRotation(rotation: RotationKey, engineerIds: str
     { $setOnInsert: { engineerIds, nextIndex: 0, completedAssignments: 0, updatedAt: new Date() } },
     { upsert: true },
   );
-}
-
-/** Acknowledge the ObjectId import for downstream collection helpers. */
-export function isValidMongoId(value: string): boolean {
-  return ObjectId.isValid(value);
 }
