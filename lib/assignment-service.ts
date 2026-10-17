@@ -100,6 +100,14 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
           const index = (startIndex + offset) % rotation.engineerIds.length;
           const engineer = byId.get(rotation.engineerIds[index]);
           if (!engineer || !isEligible(engineer, input.rotation, input.scheduledStartAt, input.scheduledEndAt, false)) continue;
+          const scheduledIstDate = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+          }).format(input.scheduledStartAt);
+          const approvedLeave = await db.collection("leave_requests").findOne({
+            engineerId: engineer.id, status: "Approved",
+            startDate: { $lte: scheduledIstDate }, endDate: { $gte: scheduledIstDate },
+          }, { session });
+          if (approvedLeave) continue;
           const skipUntil = engineer.skipUntilCompletionByRotation?.[input.rotation] ?? engineer.skipUntilCompletion;
           if (skipUntil !== undefined && rotation.completedAssignments < skipUntil) continue;
           const busy = await assignments.findOne({
