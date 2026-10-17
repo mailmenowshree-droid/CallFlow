@@ -30,6 +30,7 @@ export default function Home() {
  const [calls,setCalls] = useState<Call[]>([]);
  const [leaves,setLeaves] = useState<LeaveItem[]>([]);
  const [reportData,setReportData] = useState<ReportData|null>(null);
+ const [reportRefreshKey,setReportRefreshKey] = useState(0);
  const [leaveStart,setLeaveStart] = useState(localDate());
  const [leaveEnd,setLeaveEnd] = useState(localDate());
  const [leaveReason,setLeaveReason] = useState("");
@@ -108,7 +109,7 @@ export default function Home() {
      if(alive) setReportData(data);
    }catch(error){if(alive)setNotice(error instanceof Error?error.message:"Could not load report.");}})();
    return()=>{alive=false;};
- },[area,sessionUser,reportStart,reportEnd]);
+ },[area,sessionUser,reportStart,reportEnd,reportRefreshKey]);
  const handleLogin = async (e: FormEvent) => {
    e.preventDefault(); setAuthBusy(true); setAuthError("");
    try {
@@ -287,7 +288,7 @@ export default function Home() {
     <section className="surface table-surface"><div className="section-head"><div><h2>Requests</h2><p className="muted">Managers and Team Leads can approve or reject. Applicants can cancel their own requests.</p></div></div>{leaves.length===0?<p className="empty">No leave requests yet.</p>:<div className="table-scroll"><table className="data-table"><thead><tr><th>Team member</th><th>Dates</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead><tbody>{leaves.slice().sort((a,b)=>a.startDate.localeCompare(b.startDate)).map(l=><tr key={l.id}><td><strong>{l.engineerName}</strong></td><td>{l.startDate} – {l.endDate}</td><td>{l.reason}</td><td><Pill>{l.status}</Pill></td><td><div className="inline-actions">{(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")&&l.status==="Pending"&&<><button className="text-button" onClick={()=>updateLeaveStatus(l,"Approved")}>Approve</button><button className="text-button" onClick={()=>updateLeaveStatus(l,"Rejected")}>Reject</button></>}{l.engineerId===sessionUser.id&&(l.status==="Pending"||l.status==="Approved")&&<button className="text-button" onClick={()=>updateLeaveStatus(l,"Cancelled")}>Cancel</button>}</div></td></tr>)}</tbody></table></div>}</section>
    </>}
    {area==="Reports"&&<><div className="page-heading"><div><p className="eyebrow">REPORTING</p><h1>Reports</h1><p className="muted">Calls addressed, overdue work, attendance and leave shrinkage from saved records.</p></div></div>
-    {(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")?<><section className="surface"><div className="toolbar"><label>From <input type="date" value={reportStart} max={reportEnd} onChange={e=>setReportStart(e.target.value)}/></label><label>To <input type="date" value={reportEnd} min={reportStart} onChange={e=>setReportEnd(e.target.value)}/></label><button className="button subtle" onClick={()=>setReportData(null)}>Refresh report</button></div></section>
+    {(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")?<><section className="surface"><div className="toolbar"><label>From <input type="date" value={reportStart} max={reportEnd} onChange={e=>setReportStart(e.target.value)}/></label><label>To <input type="date" value={reportEnd} min={reportStart} onChange={e=>setReportEnd(e.target.value)}/></label><button className="button subtle" onClick={()=>{setReportData(null);setReportRefreshKey(v=>v+1);}}>Refresh report</button></div></section>
     {reportData?<><section className="metric-grid">{[{label:"Calls scheduled",value:reportData.counts.total},{label:"Completed",value:reportData.counts.completed},{label:"In progress",value:reportData.counts.inProgress},{label:"Needs attention",value:reportData.counts.needsAttention},{label:"Late / missed",value:reportData.counts.lateOrMissed}].map(m=><div className="metric report-metric" key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</section>
     <section className="metric-grid">{[{label:"Active team",value:reportData.team.activeMembers},{label:"Checked in",value:reportData.team.checkedIn},{label:"Absent",value:reportData.team.absent},{label:"Approved leave days",value:reportData.team.approvedLeavePersonDays},{label:"Shrinkage",value:reportData.team.shrinkagePercent+"%"}].map(m=><div className="metric report-metric" key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</section>
     <section className="surface table-surface"><div className="section-head"><div><h2>Assignment outcomes</h2><p className="muted">Server-generated from persisted assignments for the selected period.</p></div><button className="button subtle" onClick={()=>{const rows=[["Assignment","Case","Type","Engineer","Scheduled","Status","Late/missed","Manual","Notes"],...reportData.rows.map(r=>[r.id,r.caseNumber,r.kind,r.engineer,r.scheduledStartAt,r.status,r.lateOrMissed?"Yes":"No",r.manual?"Yes":"No",r.notes])];const csv=rows.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(",")).join("\n");const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="callflow-report.csv";a.click();URL.revokeObjectURL(url);}}>Export CSV</button></div>
