@@ -33,8 +33,14 @@ function minutesLate(call:Call) { const nowParts=new Intl.DateTimeFormat("en-GB"
 export default function Home() {
  const [area,setArea] = useState<Area>("Overview");
  const [teamView,setTeamView] = useState<TeamView>("Roster");
- const [engineers,setEngineers] = useState<Engineer[]>(initialEngineers);
- const [calls,setCalls] = useState<Call[]>(initialCalls);
+ const [engineers,setEngineers] = useState<Engineer[]>([]);
+ const [calls,setCalls] = useState<Call[]>([]);
+ const [sessionUser,setSessionUser] = useState<SessionUser|null>(null);
+ const [authReady,setAuthReady] = useState(false);
+ const [authEmail,setAuthEmail] = useState("");
+ const [authPassword,setAuthPassword] = useState("");
+ const [authBusy,setAuthBusy] = useState(false);
+ const [authError,setAuthError] = useState("");
  const [query,setQuery] = useState("");
  const [assignmentView,setAssignmentView] = useState<"All"|"Schedule">("All");
  const [statusFilter,setStatusFilter] = useState<"All"|Status>("All");
