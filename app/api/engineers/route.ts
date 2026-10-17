@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       callQueue: role === "Engineer" && value.callQueue,
       ftsQueue: role === "Engineer" && value.ftsQueue,
       absent: false,
+      attendanceStatus: "Not checked in",
       createdAt: now,
       updatedAt: now,
     };
