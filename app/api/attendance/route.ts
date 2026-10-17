@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { ensureCallFlowIndexes, getDatabase } from "@/lib/mongodb";
 import type { EngineerRecord } from "@/lib/callflow-types";
-import { getWfhAllowance } from "@/lib/wfh-policy";
+import { reserveWfhDay } from "@/lib/wfh-quota";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,27 +38,37 @@ export async function POST(request: NextRequest) {
     const istParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
     const ist = Object.fromEntries(istParts.map((part) => [part.type, part.value]));
     const todayKey = `${ist.year}-${ist.month}-${ist.day}`;
+    let wfhResponse: { usedThisQuarter: number; allowanceAvailableToDate: number; remaining: number } | undefined;
     if (checkIn && workMode === "WFH") {
       const quarterStartMonth = Math.floor((Number(ist.month) - 1) / 3) * 3 + 1;
       const quarterStart = `${ist.year}-${String(quarterStartMonth).padStart(2, "0")}-01`;
-      const currentMonthStart = `${ist.year}-${ist.month}-01`;
-      const wfhEvents = await db.collection("attendance_events").find({
-        engineerId,
-        eventType: "WFH_CHECKED_IN",
-        attendanceDate: { $gte: quarterStart, $lte: todayKey },
-      }).toArray();
-      const uniqueDays = new Set(wfhEvents.map((event) => String(event.attendanceDate)));
-      if (uniqueDays.has(todayKey)) {
-        return NextResponse.json({ error: "WFH is already recorded for you today." }, { status: 409, headers: noStore });
-      }
-      const usedThisQuarter = uniqueDays.size;
       const monthsElapsedInQuarter = Number(ist.month) - quarterStartMonth + 1;
-      const allowance = getWfhAllowance(monthsElapsedInQuarter, usedThisQuarter);
-      if (!allowance.allowed) {
-        return NextResponse.json({
-          error: "Your available WFH allowance is used for this month. Unused allowance carries forward within the quarter, up to 6 WFH days per quarter.",
-          wfh: { usedThisQuarter, allowanceAvailableToDate: allowance.allowanceAvailableToDate, remaining: allowance.remaining, quarterStart, currentMonthStart },
-        }, { status: 409, headers: noStore });
+      const client = await getMongoClient();
+      const session = client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const reservation = await reserveWfhDay(db, session, { engineerId, quarterStart, todayKey, monthsElapsedInQuarter, now });
+          if (!reservation.ok) {
+            throw new Error(reservation.reason === "already-recorded"
+              ? "WFH_ALREADY_RECORDED"
+              : `WFH_LIMIT:${reservation.usedThisQuarter}:${reservation.allowanceAvailableToDate}:${reservation.remaining}:${quarterStart}`);
+          }
+          wfhResponse = { usedThisQuarter: reservation.usedThisQuarter, allowanceAvailableToDate: reservation.allowanceAvailableToDate, remaining: reservation.remaining };
+        }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+      } catch (error) {
+        if (error instanceof Error && error.message === "WFH_ALREADY_RECORDED") {
+          return NextResponse.json({ error: "WFH is already recorded for you today." }, { status: 409, headers: noStore });
+        }
+        if (error instanceof Error && error.message.startsWith("WFH_LIMIT:")) {
+          const [, used, allowance, remaining, quarterStart] = error.message.split(":");
+          return NextResponse.json({
+            error: "Your available WFH allowance is used for this month. Unused allowance carries forward within the quarter, up to 6 WFH days per quarter.",
+            wfh: { usedThisQuarter: Number(used), allowanceAvailableToDate: Number(allowance), remaining: Number(remaining), quarterStart },
+          }, { status: 409, headers: noStore });
+        }
+        throw error;
+      } finally {
+        await session.endSession();
       }
     }
     const update = await db.collection<EngineerRecord>("engineers").updateOne(
@@ -90,7 +100,7 @@ export async function POST(request: NextRequest) {
       occurredAt: now,
       metadata: { attendanceStatus: checkIn ? "Present" : "Not checked in" },
     });
-    return NextResponse.json({ ok: true, attendanceStatus: checkIn ? "Present" : "Not checked in", workMode: checkIn ? workMode : undefined, attendanceDate: todayKey, occurredAt: now }, { headers: noStore });
+    return NextResponse.json({ ok: true, attendanceStatus: checkIn ? "Present" : "Not checked in", workMode: checkIn ? workMode : undefined, attendanceDate: todayKey, occurredAt: now, ...(wfhResponse ? { wfh: wfhResponse } : {}) }, { headers: noStore });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED") return NextResponse.json({ error: "Sign in required." }, { status: 401, headers: noStore });
     if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to perform this action." }, { status: 403, headers: noStore });
