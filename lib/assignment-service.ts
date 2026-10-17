@@ -119,6 +119,19 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
         throw new AssignmentServiceError("NO_ELIGIBLE_ENGINEER", "No eligible engineer is available in this time window.");
       }
 
+      const scheduledIstDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(input.scheduledStartAt);
+      const approvedLeave = await db.collection("leave_requests").findOne({
+        engineerId: selected.id,
+        status: "Approved",
+        startDate: { $lte: scheduledIstDate },
+        endDate: { $gte: scheduledIstDate },
+      }, { session });
+      if (approvedLeave) {
+        throw new AssignmentServiceError("NO_ELIGIBLE_ENGINEER", "The selected engineer is on approved leave for this date.");
+      }
+
       const busy = await assignments.findOne({
         engineerId: selected.id,
         status: { $in: ["Scheduled", "In Progress", "Needs attention"] },
