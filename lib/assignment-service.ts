@@ -100,7 +100,8 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
           const index = (startIndex + offset) % rotation.engineerIds.length;
           const engineer = byId.get(rotation.engineerIds[index]);
           if (!engineer || !isEligible(engineer, input.rotation, input.scheduledStartAt, input.scheduledEndAt, false)) continue;
-          if (engineer.skipUntilCompletion !== undefined && rotation.completedAssignments < engineer.skipUntilCompletion) continue;
+          const skipUntil = engineer.skipUntilCompletionByRotation?.[input.rotation] ?? engineer.skipUntilCompletion;
+          if (skipUntil !== undefined && rotation.completedAssignments < skipUntil) continue;
           const busy = await assignments.findOne({
             engineerId: engineer.id,
             status: { $in: ["Scheduled", "In Progress", "Needs attention"] },
