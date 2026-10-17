@@ -12,6 +12,7 @@ export type EngineerRecord = {
   ftsQueue: boolean;
   absent?: boolean;
   attendanceStatus?: "Present" | "Absent" | "Not checked in";
+  attendanceWorkMode?: "Office" | "WFH";
   checkedInAt?: Date;
   checkedOutAt?: Date;
   leaveUntil?: Date;
