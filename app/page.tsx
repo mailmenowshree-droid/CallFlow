@@ -168,13 +168,13 @@ export default function Home() {
      setNewName("");setNewUserEmail("");setNewUserPassword("");setNotice(`Account created for ${data.user.email}.`);
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not create account."); }
  };
- const updateAttendance = async (id:string,action:"check-in"|"check-out") => {
+ const updateAttendance = async (id:string,action:"check-in"|"check-out",workMode?:"Office"|"WFH") => {
    try {
-     const response=await fetch("/api/attendance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,engineerId:id})});
+     const response=await fetch("/api/attendance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,engineerId:id,workMode})});
      const data=await response.json();
      if(!response.ok) throw new Error(data.error??"Could not update attendance.");
      setEngineers(prev=>prev.map(member=>member.id===id?{...member,attendanceStatus:data.attendanceStatus,absent:false}:member));
-     setNotice(action==="check-in"?"Attendance marked present.":"Attendance check-out recorded.");
+     setNotice(action==="check-in"?(workMode==="WFH"?"WFH attendance recorded.":"Office attendance recorded."):"Attendance check-out recorded.");
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not update attendance."); }
  };
  const submitLeave = async (e:FormEvent) => {
