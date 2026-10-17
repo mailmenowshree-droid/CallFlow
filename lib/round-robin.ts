@@ -29,6 +29,14 @@ function overlaps(a: TimeInterval, b: TimeInterval): boolean {
   return a.startAt < b.endAt && a.endAt > b.startAt;
 }
 
+/** Returns true when a proposed Event overlaps any engineer-entered scheduled call. */
+export function hasScheduleConflict(
+  scheduledCalls: TimeInterval[],
+  proposedEvent: AssignmentWindow,
+): boolean {
+  return scheduledCalls.some((scheduledCall) => overlaps(scheduledCall, proposedEvent));
+}
+
 /**
  * Pure round-robin selection. Persist the returned nextIndex atomically with
  * the assignment in the server-side database before using this in production.
