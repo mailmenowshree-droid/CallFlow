@@ -179,7 +179,7 @@ export default function Home() {
  const skipNext = async (rotation:Rotation) => {
    const next=getNext(rotation); if(!next){setNotice("No eligible engineer to skip.");return;}
    try {
-     const response=await fetch("/api/rotations/skip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rotation,engineerId:next.id})});
+     const response=await fetch("/api/rotations/skip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rotation})});
      const data=await response.json();
      if(!response.ok) throw new Error(data.error??"Could not apply rotation skip.");
      setSkipUntil(p=>({...p,[`${rotation}:${next.id}`]:completedByRotation[rotation]+3}));
