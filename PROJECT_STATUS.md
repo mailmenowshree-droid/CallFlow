@@ -7,7 +7,7 @@ Default branch: `main`
 ## Current verified state
 
 - The repository contains a Next.js 14 App Router, React, TypeScript, and Tailwind CSS UI prototype.
-- `app/page.tsx` renders a sample operations dashboard, illustrative FE + CRU Events and FTS rotations, a local request form, search, and a Start Call UI action.
+- `app/page.tsx` renders a sample operations dashboard, illustrative FE + CRU Events and FTS rotations, a local request form, search, and a Start Call UI action. The request form now accepts case number, date picker, 30-minute time slots displayed in IST, optional notes, and optional manual engineer selection.
 - Request records live only in React component state. Refreshing the page loses changes.
 - The sample engineers, request IDs, customers, assignment queues, counts, and statuses are demo values; they are not operational data.
 - `README.md` explicitly states that authentication, database persistence, transactional round-robin assignment, scheduled reminders, attendance APIs, and WhatsApp integration are not implemented.
@@ -21,7 +21,7 @@ Default branch: `main`
 | Capability | Status | Notes |
 |---|---|---|
 | Browser dashboard | Prototype present | Uses hard-coded/demo data and local component state |
-| Team Lead request entry | Partial prototype | Form creates a local demo record only |
+| Team Lead request entry | Partial prototype | Form accepts case number, assignment type, date, 30-minute IST time slot, optional notes and optional manual engineer; records remain in browser state only |\n| Assignment notes | Prototype present | Optional notes are displayed beside each assignment; not persistent across refreshes |\n| Date/time entry | Prototype present | Native date picker and 48 half-hour time slots displayed in IST; no server-side timezone validation yet |
 | Separate FE + CRU Events rotation | UI illustration + pure rule module | Not yet persisted or connected to API |
 | Separate FTS rotation | UI illustration + pure rule module | Can use separate rotation state; not yet persisted or connected to API |
 | Assignment confirmation | Not implemented | Requires authenticated Team Lead flow and server-side validation |
@@ -73,5 +73,5 @@ Default branch: `main`
 
 - 2026-10-17: Reviewed repository metadata, README, package manifest, UI files, TypeScript configuration, and Tailwind configuration through the GitHub connector.
 - 2026-10-17: Added a pure round-robin domain module and Vitest coverage for rotation order, overlapping busy intervals, inactive/leave eligibility, three-completion skip cooldown, and no-eligible behavior.
-- 2026-10-17: Added GitHub Actions validation. Run 38984052380: dependency installation, TypeScript check, and unit tests passed; production build is still in progress at the last check.
+- 2026-10-17: Added GitHub Actions validation. An earlier run (38984052380) passed TypeScript and unit tests; production build status was not conclusively verified here. Later UI commits still need fresh CI confirmation.\n- 2026-10-17: Added optional assignment notes and updated the TL request form to use case number, date picker, 30-minute time slots displayed in IST, and show scheduled date in the assignments list. These changes are committed to `feature/validation-baseline`; fresh CI has not yet been verified.
 - Not run locally: install, TypeScript check, unit tests, or production build. CI has passed TypeScript and unit tests; production build is still pending. Database tests, browser end-to-end tests, and live deployment verification have not been run.
