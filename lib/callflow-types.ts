@@ -29,6 +29,7 @@ export type AssignmentRecord = {
   scheduledStartAt: Date;
   scheduledEndAt: Date;
   engineerId: string;
+  manual?: boolean;
   status: AssignmentStatus;
   notes?: string;
   createdBy: string;
