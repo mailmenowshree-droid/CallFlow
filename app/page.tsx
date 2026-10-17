@@ -144,10 +144,16 @@ export default function Home() {
    const idx=members.findIndex(e=>e.id===next.id);setRotationIndex(p=>({...p,[rotation]:(idx+1)%Math.max(1,members.length)}));
    setNotice(`${next.name} skipped until three assignments in this rotation are completed.`);
  };
- const changeStatus = (call:Call,status:Status) => {
+ const changeStatus = async (call:Call,status:Status) => {
    if(call.status==="Completed"||call.status==="Cancelled") return;
-   setCalls(prev=>prev.map(c=>c.id===call.id?{...c,status}:c));
-   if(status==="Completed"){const r=rotationFor(call.kind);setCompletedByRotation(p=>({...p,[r]:p[r]+1}));}
+   try {
+     const response=await fetch(`/api/assignments/${call.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
+     const data=await response.json();
+     if(!response.ok) throw new Error(data.error??"Could not update assignment.");
+     setCalls(prev=>prev.map(c=>c.id===call.id?{...c,status:data.assignment.status}:c));
+     if(status==="Completed"){const r=rotationFor(call.kind);setCompletedByRotation(p=>({...p,[r]:p[r]+1}));}
+     setNotice(`Assignment ${call.caseNumber} updated to ${status}.`);
+   } catch(error) { setNotice(error instanceof Error?error.message:"Could not update assignment."); }
  };
  const nav: {label:Area;icon:typeof LayoutDashboard}[]=[{label:"Overview",icon:LayoutDashboard},{label:"Assignments",icon:CalendarDays},{label:"Team",icon:Users},{label:"Reports",icon:FileBarChart2}];
  if (!authReady) return <main className="minimal-app"><div className="login-panel"><h1>CallFlow</h1><p>Loading your workspace…</p></div></main>;
