@@ -1,4 +1,5 @@
 import { hash } from "bcryptjs";
+import { randomUUID } from "node:crypto";
 import { MongoClient } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
@@ -26,7 +27,7 @@ try {
     process.exitCode = 1;
   } else {
     await users.insertOne({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       email,
       name,
       role: "Manager",
