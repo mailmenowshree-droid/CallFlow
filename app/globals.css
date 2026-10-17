@@ -154,3 +154,23 @@ button.metric:hover{border-color:#b9c8f4;background:#fcfdff}
 .add-member{background:#f8faff;border:1px solid #e0e8f4;border-radius:8px;padding:12px;margin-bottom:14px}
 .footnote{color:#71809a}
 @media(max-width:760px){.alert-banner{align-items:flex-start;flex-wrap:wrap}.alert-copy{min-width:calc(100% - 60px)}.alert-action{margin-left:50px}}
+
+/* Team Lead dashboard: fast operational scan */
+.tl-metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:18px}
+.tl-metrics .metric{position:relative;min-height:112px;align-items:flex-start;gap:8px;padding:17px 18px}
+.tl-metrics .metric span{font-size:12px}
+.tl-metrics .metric strong{font-size:30px;line-height:1.15}
+.tl-metrics .metric small{font-size:11px;color:#71809a;margin-top:2px}
+.tl-metrics .metric-green{border-top-color:#19965b}
+.tl-metrics .metric-red{border-top-color:#d92d20}
+.tl-metrics .metric-blue{border-top-color:#2b67c8}
+.tl-metrics .metric-purple{border-top-color:#7856c7}
+.tl-metrics .metric-amber{border-top-color:#d99000}
+.oncall-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}
+.oncall-card{display:flex;align-items:center;gap:11px;padding:14px;border:1px solid #dce4ef;border-radius:9px;background:#f9fbff;min-width:0}
+.oncall-card>div{flex:1;min-width:0}
+.oncall-card strong{display:block;color:#1c3356;font-size:13px}
+.oncall-card p{margin:4px 0;color:#34445e;font-size:12px;font-weight:650}
+.oncall-card small{color:#71809a;font-size:11px}
+.oncall-dot{width:10px;height:10px;flex:0 0 10px;border-radius:50%;background:#27966a;box-shadow:0 0 0 4px #dff5e8}
+@media(max-width:760px){.tl-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.oncall-grid{grid-template-columns:1fr}.oncall-card{align-items:flex-start;flex-wrap:wrap}}
