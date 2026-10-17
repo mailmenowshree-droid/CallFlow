@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
       { id: engineerId, active: true },
       { $set: {
         attendanceStatus: checkIn ? "Present" : "Not checked in",
+        ...(checkIn ? { attendanceWorkMode: workMode } : {}),
         absent: false,
         ...(checkIn ? { checkedInAt: now } : { checkedOutAt: now }),
         updatedAt: now,
