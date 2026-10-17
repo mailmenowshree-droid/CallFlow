@@ -27,7 +27,14 @@ export default function Home() {
  const [area,setArea] = useState<Area>("Overview");
  const [teamView,setTeamView] = useState<TeamView>("Roster");
  const [engineers,setEngineers] = useState<Engineer[]>([]);
- const [calls,setCalls] = useState<Call[]>([]);\n const [leaves,setLeaves] = useState<LeaveItem[]>([]);\n const [reportData,setReportData] = useState<ReportData|null>(null);\n const [leaveStart,setLeaveStart] = useState(localDate());\n const [leaveEnd,setLeaveEnd] = useState(localDate());\n const [leaveReason,setLeaveReason] = useState("");\n const [reportStart,setReportStart] = useState(localDate());\n const [reportEnd,setReportEnd] = useState(localDate());
+ const [calls,setCalls] = useState<Call[]>([]);
+ const [leaves,setLeaves] = useState<LeaveItem[]>([]);
+ const [reportData,setReportData] = useState<ReportData|null>(null);
+ const [leaveStart,setLeaveStart] = useState(localDate());
+ const [leaveEnd,setLeaveEnd] = useState(localDate());
+ const [leaveReason,setLeaveReason] = useState("");
+ const [reportStart,setReportStart] = useState(localDate());
+ const [reportEnd,setReportEnd] = useState(localDate());
  const [sessionUser,setSessionUser] = useState<SessionUser|null>(null);
  const [authReady,setAuthReady] = useState(false);
  const [authEmail,setAuthEmail] = useState("");
