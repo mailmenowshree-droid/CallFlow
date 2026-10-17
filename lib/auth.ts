@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { jwtVerify, SignJWT } from "jose";
 import type { EngineerRole } from "@/lib/callflow-types";
+import { getDatabase } from "@/lib/mongodb";
 
 export const SESSION_COOKIE = "callflow_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
@@ -42,11 +43,15 @@ export async function readSession(): Promise<SessionUser | null> {
       typeof payload.name !== "string" ||
       !["Engineer", "SSE", "Team Lead", "Manager"].includes(String(payload.role))
     ) return null;
+    const db = await getDatabase();
+    const user = await db.collection<{ id: string; email: string; name: string; role: EngineerRole; active: boolean }>("users")
+      .findOne({ id: payload.sub, active: true });
+    if (!user) return null;
     return {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      role: payload.role as EngineerRole,
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
     };
   } catch {
     return null;
