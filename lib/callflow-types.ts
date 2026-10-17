@@ -11,6 +11,9 @@ export type EngineerRecord = {
   callQueue: boolean;
   ftsQueue: boolean;
   absent?: boolean;
+  attendanceStatus?: "Present" | "Absent" | "Not checked in";
+  checkedInAt?: Date;
+  checkedOutAt?: Date;
   leaveUntil?: Date;
   /** Per-queue completion thresholds; a skip in FTS must not affect the shared call queue. */
   skipUntilCompletionByRotation?: Partial<Record<RotationKey, number>>;
