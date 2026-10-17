@@ -1,4 +1,4 @@
-import { getDatabase, getMongoClient } from "@/lib/mongodb";
+import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
 import type { AssignmentRecord, AssignmentStatus, RotationKey, RotationRecord } from "@/lib/callflow-types";
 
 export class LifecycleError extends Error {
@@ -32,6 +32,7 @@ export async function transitionAssignment(
     throw new LifecycleError("NOT_FOUND", "Assignment and actor are required.");
   }
 
+  await ensureCallFlowIndexes();
   const db = await getDatabase();
   const client = await getMongoClient();
   const session = client.startSession();
