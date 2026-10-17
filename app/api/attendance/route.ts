@@ -34,7 +34,6 @@ export async function POST(request: NextRequest) {
     const db = await getDatabase();
     const now = new Date();
     const checkIn = value.action === "check-in";
-    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     // Use India-local calendar boundaries for the WFH policy and attendance record.
     const istParts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
     const ist = Object.fromEntries(istParts.map((part) => [part.type, part.value]));
