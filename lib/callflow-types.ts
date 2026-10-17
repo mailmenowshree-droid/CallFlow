@@ -12,6 +12,9 @@ export type EngineerRecord = {
   ftsQueue: boolean;
   absent?: boolean;
   leaveUntil?: Date;
+  /** Per-queue completion thresholds; a skip in FTS must not affect the shared call queue. */
+  skipUntilCompletionByRotation?: Partial<Record<RotationKey, number>>;
+  /** Legacy field retained for migration compatibility; new code should use the per-rotation map. */
   skipUntilCompletion?: number;
   createdAt: Date;
   updatedAt: Date;
