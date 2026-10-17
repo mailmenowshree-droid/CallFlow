@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { ensureCallFlowIndexes, getDatabase } from "@/lib/mongodb";
 import type { EngineerRecord } from "@/lib/callflow-types";
+import { getWfhAllowance } from "@/lib/wfh-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,11 +54,11 @@ export async function POST(request: NextRequest) {
       }
       const usedThisQuarter = uniqueDays.size;
       const monthsElapsedInQuarter = Number(ist.month) - quarterStartMonth + 1;
-      const accruedAllowance = Math.min(6, monthsElapsedInQuarter * 2);
-      if (usedThisQuarter >= accruedAllowance) {
+      const allowance = getWfhAllowance(monthsElapsedInQuarter, usedThisQuarter);
+      if (!allowance.allowed) {
         return NextResponse.json({
           error: "Your available WFH allowance is used for this month. Unused allowance carries forward within the quarter, up to 6 WFH days per quarter.",
-          wfh: { usedThisQuarter, allowanceAvailableToDate: accruedAllowance, quarterStart, currentMonthStart },
+          wfh: { usedThisQuarter, allowanceAvailableToDate: allowance.allowanceAvailableToDate, remaining: allowance.remaining, quarterStart, currentMonthStart },
         }, { status: 409, headers: noStore });
       }
     }
