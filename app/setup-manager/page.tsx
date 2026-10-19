@@ -12,8 +12,8 @@ export default function SetupManagerPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    if (password.length < 14) {
-      setMessage("Use a password with at least 14 characters.");
+    if (password.length < 4) {
+      setMessage("Use a password with at least 4 characters.");
       return;
     }
     if (password !== confirmPassword) {
@@ -53,7 +53,7 @@ export default function SetupManagerPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">CallFlow · Initial setup</p>
         <h1 className="mt-2 text-2xl font-semibold">Create Manager account</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          One-time setup for sreekanth.mathangi@movate.com. Create a strong password and keep it private.
+          One-time setup for sreekanth.mathangi@movate.com. This is a test Manager account; use a password you can change later.
         </p>
         <form className="mt-6 space-y-4" onSubmit={submit}>
           <label className="block text-sm font-medium">
@@ -61,12 +61,12 @@ export default function SetupManagerPage() {
             <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="off" required value={token} onChange={(event) => setToken(event.target.value)} />
           </label>
           <label className="block text-sm font-medium">
-            New password (14+ characters)
-            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={14} required value={password} onChange={(event) => setPassword(event.target.value)} />
+            New password (4+ characters)
+            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={4} required value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
           <label className="block text-sm font-medium">
             Confirm password
-            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={14} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={4} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
           </label>
           <button disabled={busy} className="w-full rounded-lg bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50" type="submit">
             {busy ? "Creating account…" : "Create Manager account"}
