@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const dates: string[] = [];
     const cursor = new Date(body.startDate + "T12:00:00Z");
     const end = new Date(body.endDate + "T12:00:00Z");
-    while (cursor <= end && dates.length <= 31) { dates.push(cursor.toISOString().slice(0,10)); cursor.setUTCDate(cursor.getUTCDate()+1); }
+    while (cursor <= end && dates.length <= 31) { dates.push(cursor.toISOString().slice(0, 10)); cursor.setUTCDate(cursor.getUTCDate() + 1); }
     if (!dates.length || dates.length > 31) return NextResponse.json({ error: "A leave request can cover at most 31 days." }, { status: 400, headers });
     await ensureCallFlowIndexes();
     const db = await getDatabase();
@@ -39,10 +39,23 @@ export async function POST(request: NextRequest) {
     if (!engineer) return NextResponse.json({ error: "Active team profile not found." }, { status: 422, headers });
     const session = client.startSession();
     const now = new Date();
-    const leave = { id: randomUUID(), engineerId: user.id, engineerName: user.name, startDate: body.startDate, endDate: body.endDate, reason: body.reason.trim().slice(0,500), status: "Pending", createdAt: now, updatedAt: now };
+    const leave = { id: randomUUID(), engineerId: user.id, engineerName: user.name, startDate: body.startDate, endDate: body.endDate, reason: body.reason.trim().slice(0, 500), status: "Pending", createdAt: now, updatedAt: now };
     try {
       await session.withTransaction(async () => {
-        const existing = await db.collection("leave_requests").find({ status: { $in: ["Pending", "Approved"] }, startDate: { $lte: body.endDate }, endDate: { $gte: body.startDate } }, { session }).toArray();
+        // Each date document is a write lock. Concurrent applications for an overlapping
+        // date conflict and retry against a fresh snapshot before capacity is evaluated.
+        for (const day of dates) {
+          await db.collection("leave_capacity").updateOne(
+            { _id: day },
+            { $inc: { reservationVersion: 1 }, $setOnInsert: { createdAt: now } },
+            { upsert: true, session },
+          );
+        }
+        const existing = await db.collection("leave_requests").find({
+          status: { $in: ["Pending", "Approved"] },
+          startDate: { $lte: body.endDate },
+          endDate: { $gte: body.startDate },
+        }, { session }).toArray();
         for (const day of dates) {
           const count = existing.filter((item: any) => item.startDate <= day && item.endDate >= day).length;
           if (count >= 2) throw new Error("LEAVE_FULL:" + day);
@@ -53,7 +66,9 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("LEAVE_FULL:")) return NextResponse.json({ error: error.message.slice(11) + " is full: two people have already applied for or been approved for leave. Please choose another day." }, { status: 409, headers });
       throw error;
-    } finally { await session.endSession(); }
+    } finally {
+      await session.endSession();
+    }
     return NextResponse.json({ leave }, { status: 201, headers });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED") return NextResponse.json({ error: "Sign in required." }, { status: 401, headers });
