@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
         // Each date document is a write lock. Concurrent applications for an overlapping
         // date conflict and retry against a fresh snapshot before capacity is evaluated.
         for (const day of dates) {
-          await db.collection("leave_capacity").updateOne(
+          await db.collection<{ _id: string; reservationVersion?: number; createdAt?: Date }>("leave_capacity").updateOne(
             { _id: day },
             { $inc: { reservationVersion: 1 }, $setOnInsert: { createdAt: now } },
             { upsert: true, session },
