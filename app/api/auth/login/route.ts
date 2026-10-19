@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Name or password is incorrect." }, { status: 401, headers: noStore });
   }
 
+  let stage = "database";
   try {
     await ensureCallFlowIndexes();
     const db = await getDatabase();
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
     const session = client.startSession();
     let id = "";
     try {
+      stage = "user record transaction";
       await session.withTransaction(async () => {
         const users = db.collection<{ id: string; email: string; name: string; role: EngineerRole; active: boolean; passwordHash: string; createdAt: Date; updatedAt: Date }>("users");
         let user = await users.findOne({ name: identity.name }, { session });
@@ -85,11 +87,15 @@ export async function POST(request: NextRequest) {
         }
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
     } finally { await session.endSession(); }
+    stage = "session token";
     const token = await createSessionToken({ id, email, name: identity.name, role: identity.role });
     const response = NextResponse.json({ user: { id, email, name: identity.name, role: identity.role } }, { headers: noStore });
     response.cookies.set("callflow_session", token, sessionCookieOptions());
     return response;
-  } catch {
-    return NextResponse.json({ error: "Sign-in failed while preparing the test workspace." }, { status: 503, headers: noStore });
+  } catch (error) {
+    const err = error as { name?: string; code?: string | number; codeName?: string };
+    console.error("CallFlow preview sign-in failed", { stage, name: err?.name, code: err?.code, codeName: err?.codeName });
+    const diagnostic = process.env.NODE_ENV !== "production" ? { stage, reason: err?.codeName ?? err?.code ?? err?.name ?? "unknown" } : {};
+    return NextResponse.json({ error: "Sign-in failed while preparing the test workspace.", ...diagnostic }, { status: 503, headers: noStore });
   }
 }
