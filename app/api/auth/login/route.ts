@@ -1,5 +1,4 @@
 import { compare } from "bcryptjs";
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionToken, sessionCookieOptions } from "@/lib/auth";
 import { getDatabase } from "@/lib/mongodb";
@@ -17,20 +16,22 @@ type UserRecord = {
   passwordHash: string;
 };
 
+const validRoles: EngineerRole[] = ["Manager", "Team Lead", "Engineer", "SSE"];
+
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid request." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Email and password are required." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
   const input = body as Record<string, unknown>;
   if (typeof input.email !== "string" || typeof input.password !== "string" ||
       !input.email.trim() || !input.password || input.password.length > 1024) {
-    return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
+    return NextResponse.json({ error: "Email and password are required." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
   try {
@@ -39,8 +40,14 @@ export async function POST(request: NextRequest) {
       email: input.email.trim().toLowerCase(),
       active: true,
     });
-    const valid = user ? await compare(input.password, user.passwordHash) : false;
-    if (!user || !valid) {
+    const validRecord = !!user &&
+      typeof user.id === "string" && !!user.id.trim() &&
+      typeof user.email === "string" && !!user.email.trim() &&
+      typeof user.name === "string" && !!user.name.trim() &&
+      typeof user.passwordHash === "string" && user.passwordHash.startsWith("$2") &&
+      validRoles.includes(user.role);
+    const validPassword = validRecord && user ? await compare(input.password, user.passwordHash) : false;
+    if (!user || !validRecord || !validPassword) {
       return NextResponse.json({ error: "Invalid email or password." }, {
         status: 401,
         headers: { "Cache-Control": "no-store" },
@@ -48,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await createSessionToken({
-      id: user.id || randomUUID(),
+      id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
