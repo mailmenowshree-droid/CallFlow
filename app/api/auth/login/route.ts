@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const err = error as { name?: string; code?: string | number; codeName?: string };
     console.error("CallFlow preview sign-in failed", { stage, name: err?.name, code: err?.code, codeName: err?.codeName });
-    const diagnostic = process.env.NODE_ENV !== "production" ? { stage, reason: err?.codeName ?? err?.code ?? err?.name ?? "unknown" } : {};
+    const diagnostic = process.env.VERCEL_ENV === "preview" ? { stage, reason: err?.codeName ?? err?.code ?? err?.name ?? "unknown" } : {};
     return NextResponse.json({ error: "Sign-in failed while preparing the test workspace.", ...diagnostic }, { status: 503, headers: noStore });
   }
 }
