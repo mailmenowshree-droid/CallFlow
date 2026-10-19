@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const name = typeof input.name === "string" ? input.name.trim() : "";
   const password = typeof input.password === "string" ? input.password : "";
-  if (email !== expectedEmail || !name || name.length > 120 || password.length < 14 || password.length > 1024) {
-    return NextResponse.json({ error: "Use the configured email, a valid name, and a password of at least 14 characters." }, { status: 400, headers: noStore });
+  if (email !== expectedEmail || !name || name.length > 120 || password.length < 4 || password.length > 1024) {
+    return NextResponse.json({ error: "Use the configured email, a valid name, and a password of at least 4 characters." }, { status: 400, headers: noStore });
   }
 
   try {
