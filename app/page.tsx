@@ -241,13 +241,11 @@ export default function Home() {
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not update assignment."); }
  };
  const nav: {label:Area;icon:typeof LayoutDashboard}[]=[{label:"Overview",icon:LayoutDashboard},{label:"Assignments",icon:CalendarDays},{label:"Team",icon:Users},{label:"Leaves",icon:CalendarDays},{label:"Reports",icon:FileBarChart2}];
- if (!authReady) return <main className="minimal-app"><div className="login-panel"><h1>CallFlow</h1><p>Loading your workspace…</p></div></main>;
- if (!sessionUser) return <main className="minimal-app"><section className="login-panel"><div className="brand-mark"><Activity size={22}/></div><h1>Sign in to CallFlow</h1><p className="muted">Preview test access · choose your name and use password 1234.</p><form className="assignment-form" onSubmit={handleLogin}><label>Name<select className="field" value={authName} onChange={e=>setAuthName(e.target.value)} required><option value="">Select your name</option>{["Sreekanth","Vasista Vardhan Gera","Gottam Geethika","Deepak Anbu","Sakthivel Vellaichamy","Ashik Abiragam Thangaraj","Jeromechinnappan Anthonysamy","Rinas Rafeeque","Muhammed Sahad M B T","Ramki Gajendran","Karri Vamsi Krishna","Suthish Ravichandran","Reinhardt Benjamin Eptha Deva","Sanjay Rayan Vasanth"].map(n=><option key={n} value={n}>{n}</option>)}</select></label><label>Password<input className="field" type="password" autoComplete="current-password" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required/></label>{authError&&<p className="auth-error" role="alert">{authError}</p>}<button className="button primary" type="submit" disabled={authBusy}>{authBusy?"Signing in…":"Sign in"}</button></form></section></main>;
  return <main className="minimal-app">
   <header className="minimal-header">
    <a className="brand" href="#" onClick={e=>{e.preventDefault();setArea("Overview");}}><span className="brand-mark"><Activity size={19}/></span><span>CallFlow</span></a>
    <nav className="top-nav" aria-label="Main navigation">{nav.map(n=><button key={n.label} onClick={()=>setArea(n.label)} className={area===n.label?"selected":""}>{n.label}</button>)}</nav>
-   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>{sessionUser.name}</span><button className="text-button" onClick={handleLogout}>Sign out</button></div>
+   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>Development mode</span></div>
   </header>
   <div className="page-wrap">
    {notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
