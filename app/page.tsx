@@ -36,12 +36,12 @@ export default function Home() {
  const [leaveReason,setLeaveReason] = useState("");
  const [reportStart,setReportStart] = useState(localDate());
  const [reportEnd,setReportEnd] = useState(localDate());
- const [sessionUser] = useState<SessionUser>({
+ const sessionUser: SessionUser = {
    id: "callflow-preview-manager",
    email: "preview-manager@callflow.local",
    name: "CallFlow Preview",
    role: "Manager",
- });
+ };
  const [newUserEmail,setNewUserEmail] = useState("");
  const [newUserPassword,setNewUserPassword] = useState("");
  const [newUserRole,setNewUserRole] = useState<Role>("Engineer");
