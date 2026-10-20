@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDatabase } from "@/lib/mongodb";
+import { ensureCallFlowIndexes, getDatabase } from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +15,9 @@ export async function GET() {
   try {
     const db = await getDatabase();
     await db.command({ ping: 1 });
+    await ensureCallFlowIndexes();
     return NextResponse.json(
-      { status: "connected", database: process.env.MONGODB_DB ?? "callflow" },
+      { status: "connected", indexes: "ready", database: process.env.MONGODB_DB ?? "callflow" },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error: unknown) {
@@ -37,7 +38,7 @@ export async function GET() {
     console.error("CallFlow database health check failed", diagnostic);
 
     return NextResponse.json(
-      { status: "unavailable", database: process.env.MONGODB_DB ?? "callflow" },
+      { status: "unavailable", indexes: "failed_or_unverified", diagnostic: diagnostic.name, code: diagnostic.code, codeName: diagnostic.codeName, database: process.env.MONGODB_DB ?? "callflow" },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
