@@ -31,6 +31,17 @@ export async function createSessionToken(user: SessionUser): Promise<string> {
 }
 
 export async function readSession(): Promise<SessionUser | null> {
+  // Temporary development mode: preview builds use a fixed Manager identity so
+  // the main application can be developed without the login module. Never enable
+  // this on production deployments.
+  if (process.env.VERCEL_ENV === "preview" || process.env.NODE_ENV === "development") {
+    return {
+      id: "callflow-preview-manager",
+      email: "preview-manager@callflow.local",
+      name: "CallFlow Preview",
+      role: "Manager",
+    };
+  }
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
