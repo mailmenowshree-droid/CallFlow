@@ -94,7 +94,6 @@ export default function Home() {
      } catch (error) {
        if (alive) setAuthError(error instanceof Error ? error.message : "Unable to connect to CallFlow.");
      } finally {
-       if (alive) setAuthReady(true);
      }
    })();
    return () => { alive = false; };
@@ -110,24 +109,7 @@ export default function Home() {
    }catch(error){if(alive)setNotice(error instanceof Error?error.message:"Could not load report.");}})();
    return()=>{alive=false;};
  },[area,sessionUser,reportStart,reportEnd,reportRefreshKey]);
- const handleLogin = async (e: FormEvent) => {
-   e.preventDefault(); setAuthBusy(true); setAuthError("");
-   try {
-     const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: authName, password: authPassword }) });
-     const data = await response.json();
-     if (!response.ok) throw new Error(data.error ?? "Sign-in failed.");
-     await loadWorkspace();
-     setSessionUser(data.user);
-     setAuthPassword("");
-   } catch (error) {
-     setAuthError(error instanceof Error ? error.message : "Sign-in failed.");
-   } finally { setAuthBusy(false); }
- };
- const handleLogout = async () => {
-   await fetch("/api/auth/logout", { method: "POST" });
-   setSessionUser(null); setEngineers([]); setCalls([]);
- };
- const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5);
+const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5);
  const escalatedCalls = thresholdCalls.filter(c=>minutesLate(c)>=10);
  const getNext = (rotation:Rotation) => {
    const members = engineers.filter(e=>e.active&&!e.absent&&e.role==="Engineer"&&(rotation==="FTS"?e.ftsQueue:e.callQueue));
