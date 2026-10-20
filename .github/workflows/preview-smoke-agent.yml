@@ -1,0 +1,64 @@
+name: CallFlow Preview Smoke Agent
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: callflow-preview-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Preview health and login journey
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check preview database health
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://call-flow-git-feature-mongodb-foundation-shreez.vercel.app/api/health/database"
+          status=$(curl --silent --show-error --max-time 20 -o /tmp/health.json -w "%{http_code}" "$url")
+          echo "Database health HTTP: $status"
+          cat /tmp/health.json
+          echo
+          test "$status" = "200"
+          grep -q '"status":"connected"' /tmp/health.json
+
+      - name: Test preview login and session
+        env:
+          TEST_NAME: ${{ secrets.CALLFLOW_TEST_NAME }}
+          TEST_PASSWORD: ${{ secrets.CALLFLOW_TEST_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TEST_NAME"
+          test -n "$TEST_PASSWORD"
+          base="https://call-flow-git-feature-mongodb-foundation-shreez.vercel.app"
+          login_status=$(curl --silent --show-error --max-time 25 -D /tmp/login.headers -o /tmp/login.json -w "%{http_code}" \
+            -H "Content-Type: application/json" \
+            --data "$(node -e 'process.stdout.write(JSON.stringify({name:process.env.TEST_NAME,password:process.env.TEST_PASSWORD}))')" \
+            "$base/api/auth/login")
+          echo "Login HTTP: $login_status"
+          cat /tmp/login.json
+          echo
+          test "$login_status" = "200"
+          cookie=$(grep -i '^set-cookie: callflow_session=' /tmp/login.headers | head -n 1 | sed -E 's/^[^:]+:[[:space:]]*([^;]+).*/\1/' | tr -d '\r')
+          test -n "$cookie"
+          me_status=$(curl --silent --show-error --max-time 20 -o /tmp/me.json -w "%{http_code}" \
+            -H "Cookie: $cookie" "$base/api/auth/me")
+          echo "Session HTTP: $me_status"
+          cat /tmp/me.json
+          echo
+          test "$me_status" = "200"
+          grep -q '"role":"Manager"' /tmp/me.json
+          grep -q '"name":"Sreekanth"' /tmp/me.json
+
+      - name: Report failure
+        if: failure()
+        run: echo "::error::CallFlow preview smoke test failed. Review the HTTP status and response body above; production is not changed by this workflow."
