@@ -66,7 +66,11 @@ export default function Home() {
  const today = localDate();
  const loadWorkspace = async () => {
    const [teamResponse, assignmentResponse, leaveResponse] = await Promise.all([fetch("/api/engineers", { cache: "no-store" }), fetch("/api/assignments", { cache: "no-store" }), fetch("/api/leaves", { cache: "no-store" })]);
-   if (!teamResponse.ok || !assignmentResponse.ok || !leaveResponse.ok) throw new Error("Could not load CallFlow data. Check your access and database configuration.");
+   const failed: string[] = [];
+   if (!teamResponse.ok) failed.push(`team ${teamResponse.status}`);
+   if (!assignmentResponse.ok) failed.push(`assignments ${assignmentResponse.status}`);
+   if (!leaveResponse.ok) failed.push(`leaves ${leaveResponse.status}`);
+   if (failed.length) throw new Error(`CallFlow data load failed: ${failed.join(", ")}. Open /api/health/database for diagnostics.`);
    const teamData = await teamResponse.json();
    const assignmentData = await assignmentResponse.json();
    const leaveData = await leaveResponse.json();
