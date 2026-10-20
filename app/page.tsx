@@ -36,12 +36,12 @@ export default function Home() {
  const [leaveReason,setLeaveReason] = useState("");
  const [reportStart,setReportStart] = useState(localDate());
  const [reportEnd,setReportEnd] = useState(localDate());
- const [sessionUser,setSessionUser] = useState<SessionUser|null>(null);
- const [authReady,setAuthReady] = useState(false);
- const [authName,setAuthName] = useState("");
- const [authPassword,setAuthPassword] = useState("");
- const [authBusy,setAuthBusy] = useState(false);
- const [authError,setAuthError] = useState("");
+ const [sessionUser] = useState<SessionUser>({
+   id: "callflow-preview-manager",
+   email: "preview-manager@callflow.local",
+   name: "CallFlow Preview",
+   role: "Manager",
+ });
  const [newUserEmail,setNewUserEmail] = useState("");
  const [newUserPassword,setNewUserPassword] = useState("");
  const [newUserRole,setNewUserRole] = useState<Role>("Engineer");
@@ -83,17 +83,9 @@ export default function Home() {
    let alive = true;
    (async () => {
      try {
-       const response = await fetch("/api/auth/me", { cache: "no-store" });
-       if (response.ok) {
-         const data = await response.json();
-         if (!alive) return;
-         await loadWorkspace();
-         if (!alive) return;
-         setSessionUser(data.user);
-       }
+       await loadWorkspace();
      } catch (error) {
-       if (alive) setAuthError(error instanceof Error ? error.message : "Unable to connect to CallFlow.");
-     } finally {
+       if (alive) setNotice(error instanceof Error ? error.message : "Unable to load CallFlow.");
      }
    })();
    return () => { alive = false; };
