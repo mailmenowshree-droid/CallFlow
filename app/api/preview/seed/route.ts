@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getDatabase, getMongoClient } from "@/lib/mongodb";
 import type { EngineerRecord, AssignmentRecord, RotationKey } from "@/lib/callflow-types";
@@ -65,7 +64,7 @@ export async function POST() {
     },
     {
       id: "demo-assignment-scheduled", requestId: "demo-request-scheduled", rotation: "FTS",
-      kind: "FTS", caseNumber: "DEMO-1004", scheduledStartAt: atIst(0, 23, 30), scheduledEndAt: atIst(0, 0, 0),
+      kind: "FTS", caseNumber: "DEMO-1004", scheduledStartAt: atIst(0, 23, 30), scheduledEndAt: atIst(1, 0, 0),
       engineerId: "demo-eng-06", status: "Scheduled", notes: "Synthetic sample: scheduled call for calendar and assignment testing.",
       createdBy: "callflow-preview-manager", createdAt: now, updatedAt: now,
     },
@@ -78,18 +77,12 @@ export async function POST() {
   ];
 
   try {
-    let alreadySeeded = false;
+    const existingMarker = await db.collection("preview_seed_markers").findOne({ _id: markerId });
+    if (existingMarker) {
+      return NextResponse.json({ status: "already_seeded", message: "Demo data has already been loaded; no records were changed." }, { headers });
+    }
     await session.withTransaction(async () => {
-      const markers = db.collection("preview_seed_markers");
-      try {
-        await markers.insertOne({ _id: markerId, createdAt: now }, { session });
-      } catch (error) {
-        if (error && typeof error === "object" && "code" in error && error.code === 11000) {
-          alreadySeeded = true;
-          return;
-        }
-        throw error;
-      }
+      await db.collection("preview_seed_markers").insertOne({ _id: markerId, createdAt: now }, { session });
       const engineers = db.collection<EngineerRecord>("engineers");
       for (const engineer of roster) {
         await engineers.updateOne(
@@ -123,11 +116,15 @@ export async function POST() {
       }, { session });
     }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
     return NextResponse.json({
-      status: alreadySeeded ? "already_seeded" : "seeded",
-      counts: alreadySeeded ? undefined : { engineers: roster.length, assignments: assignments.length, leaveRequests: 1 },
-      message: alreadySeeded ? "Demo data has already been loaded; no records were changed." : "Synthetic demo data loaded. No existing records were deleted.",
+      status: "seeded",
+      counts: { engineers: roster.length, assignments: assignments.length, leaveRequests: 1 },
+      message: "Synthetic demo data loaded. No existing records were deleted.",
     }, { headers });
   } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+      const marker = await db.collection("preview_seed_markers").findOne({ _id: markerId }).catch(() => null);
+      if (marker) return NextResponse.json({ status: "already_seeded", message: "Demo data has already been loaded; no records were changed." }, { headers });
+    }
     console.error("CallFlow preview seed failed", error instanceof Error ? error.name : "UnknownError");
     return NextResponse.json({ error: "Could not load preview demo data. Check database health and transaction support." }, { status: 503, headers });
   } finally {
