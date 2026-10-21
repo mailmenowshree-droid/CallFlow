@@ -56,6 +56,7 @@ export default function Home() {
  const [manualEngineer,setManualEngineer] = useState("");
  const [notes,setNotes] = useState("");
  const [notice,setNotice] = useState("");
+ const [demoMode,setDemoMode] = useState(false);
  const [rotationIndex,setRotationIndex] = useState<Record<Rotation,number>>({FE_CRU_EVENT:0,FTS:0});
  const [completedByRotation,setCompletedByRotation] = useState<Record<Rotation,number>>({FE_CRU_EVENT:0,FTS:0});
  const [skipUntil,setSkipUntil] = useState<Record<string,number>>({});
@@ -83,17 +84,32 @@ export default function Home() {
      return { id: a.id, kind: a.kind, caseNumber: a.caseNumber, engineerId: a.engineerId, engineer: byId.get(a.engineerId)?.name ?? "Unassigned member", date: dt.date, time: dt.time, notes: a.notes ?? "", status: a.status, manual: Boolean(a.manual) };
    }));
  };
- const seedDemoData = async () => {
-   setNotice("Loading synthetic preview data…");
-   try {
-     const response = await fetch("/api/preview/seed", { method: "POST", cache: "no-store" });
-     const data = await response.json();
-     if (!response.ok) throw new Error(data.error ?? "Could not load demo data.");
-     await loadWorkspace();
-     setNotice(data.status === "already_seeded" ? "Demo data is already loaded." : `Demo data loaded: ${data.counts.engineers} team profiles, ${data.counts.assignments} calls and ${data.counts.leaveRequests} leave request.`);
-   } catch (error) {
-     setNotice(error instanceof Error ? error.message : "Could not load demo data.");
-   }
+ const seedDemoData = () => {
+   const now = new Date();
+   const at = (minutesFromNow:number) => dateTimeParts(new Date(now.getTime()+minutesFromNow*60000).toISOString());
+   const roster:Engineer[] = [
+     {id:"demo-eng-01",name:"Demo Engineer Asha",role:"Engineer",active:true,callQueue:true,ftsQueue:true,absent:false,attendanceStatus:"Present",attendanceWorkMode:"Office"},
+     {id:"demo-eng-02",name:"Demo Engineer Ben",role:"Engineer",active:true,callQueue:true,ftsQueue:true,absent:false,attendanceStatus:"Present",attendanceWorkMode:"WFH"},
+     {id:"demo-eng-03",name:"Demo Engineer Chen",role:"Engineer",active:true,callQueue:true,ftsQueue:true,absent:false,attendanceStatus:"Present",attendanceWorkMode:"Office"},
+     {id:"demo-eng-04",name:"Demo Engineer Divya",role:"Engineer",active:true,callQueue:true,ftsQueue:true,absent:false,attendanceStatus:"Not checked in"},
+     {id:"demo-eng-05",name:"Demo Engineer Eli",role:"Engineer",active:true,callQueue:true,ftsQueue:false,absent:true,attendanceStatus:"Absent"},
+     {id:"demo-eng-06",name:"Demo Engineer Farah",role:"Engineer",active:true,callQueue:false,ftsQueue:true,absent:false,attendanceStatus:"Not checked in"},
+     {id:"demo-sse-01",name:"Demo SSE Geetha",role:"SSE",active:true,callQueue:false,ftsQueue:false,absent:false,attendanceStatus:"Present",attendanceWorkMode:"Office"},
+     {id:"demo-tl-01",name:"Demo Team Lead",role:"Team Lead",active:true,callQueue:false,ftsQueue:false,absent:false,attendanceStatus:"Present",attendanceWorkMode:"Office"}
+   ];
+   const today=localDate(), yesterday=dateTimeParts(new Date(now.getTime()-86400000).toISOString()).date;
+   const past=at(-20), future=at(90), tomorrow=dateTimeParts(new Date(now.getTime()+86400000).toISOString());
+   const sample:Call[]=[
+     {id:"demo-call-1001",kind:"FE",caseNumber:"DEMO-1001",engineer:"Demo Engineer Asha",engineerId:"demo-eng-01",date:yesterday,time:"10:00",notes:"Synthetic sample: completed field escalation.",status:"Completed"},
+     {id:"demo-call-1002",kind:"FTS",caseNumber:"DEMO-1002",engineer:"Demo Engineer Ben",engineerId:"demo-eng-02",date:today,time:"09:00",notes:"Synthetic sample: completed FTS monitoring call.",status:"Completed"},
+     {id:"demo-call-1003",kind:"CRU",caseNumber:"DEMO-1003",engineer:"Demo Engineer Chen",engineerId:"demo-eng-03",date:past.date,time:past.time,notes:"Synthetic sample: test urgent-call alerts.",status:"Needs attention"},
+     {id:"demo-call-1004",kind:"FTS",caseNumber:"DEMO-1004",engineer:"Demo Engineer Farah",engineerId:"demo-eng-06",date:future.date,time:future.time,notes:"Synthetic sample: scheduled call.",status:"Scheduled"},
+     {id:"demo-call-1005",kind:"Event",caseNumber:"DEMO-1005",engineer:"Demo SSE Geetha",engineerId:"demo-sse-01",date:tomorrow.date,time:"11:00",notes:"Synthetic sample: manually assigned to SSE.",status:"Scheduled",manual:true}
+   ];
+   setEngineers(roster);setCalls(sample);
+   setLeaves([{id:"demo-leave-01",engineerId:"demo-eng-04",engineerName:"Demo Engineer Divya",startDate:tomorrow.date,endDate:tomorrow.date,reason:"Synthetic preview data for leave approval testing.",status:"Pending"}]);
+   setReportData(null);setDemoMode(true);
+   setNotice("Local demo data loaded: 8 team profiles, 5 calls and 1 leave request. Changes stay in this browser and do not touch MongoDB.");
  };
  useEffect(() => {
    let alive = true;
@@ -107,8 +123,15 @@ export default function Home() {
    return () => { alive = false; };
  }, []);
  useEffect(() => {
-   if(area!=="Reports"||!sessionUser||!(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")) return;
+   if(area!=="Reports"||!(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")) return;
    let alive=true;
+   if(demoMode){
+     const rows=calls.filter(c=>c.date>=reportStart&&c.date<=reportEnd).map(c=>({id:c.id,caseNumber:c.caseNumber,kind:c.kind,engineer:c.engineer,scheduledStartAt:new Date(`${c.date}T${c.time}:00+05:30`).toISOString(),status:c.status,lateOrMissed:c.status!=="Completed"&&c.status!=="Cancelled"&&c.date<localDate(),manual:Boolean(c.manual),notes:c.notes}));
+     const counts={total:rows.length,completed:rows.filter(x=>x.status==="Completed").length,scheduled:rows.filter(x=>x.status==="Scheduled").length,inProgress:rows.filter(x=>x.status==="In Progress").length,needsAttention:rows.filter(x=>x.status==="Needs attention").length,cancelled:rows.filter(x=>x.status==="Cancelled").length,lateOrMissed:rows.filter(x=>x.lateOrMissed).length};
+     const active=engineers.filter(e=>e.active&&e.role==="Engineer").length;
+     if(alive)setReportData({counts,team:{activeMembers:active,checkedIn:engineers.filter(e=>e.active&&e.attendanceStatus==="Present").length,absent:engineers.filter(e=>e.active&&e.absent).length,notCheckedIn:engineers.filter(e=>e.active&&e.attendanceStatus!=="Present"&&!e.absent).length,approvedLeavePersonDays:0,capacityPersonDays:active,shrinkagePercent:active?0:0},rows});
+     return()=>{alive=false;};
+   }
    (async()=>{try{
      const response=await fetch(`/api/reports?start=${reportStart}&end=${reportEnd}`,{cache:"no-store"});
      const data=await response.json();
@@ -116,7 +139,7 @@ export default function Home() {
      if(alive) setReportData(data);
    }catch(error){if(alive)setNotice(error instanceof Error?error.message:"Could not load report.");}})();
    return()=>{alive=false;};
- },[area,sessionUser,reportStart,reportEnd,reportRefreshKey]);
+ },[area,sessionUser,reportStart,reportEnd,reportRefreshKey,demoMode,calls,engineers]);
 const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5);
  const escalatedCalls = thresholdCalls.filter(c=>minutesLate(c)>=10);
  const getNext = (rotation:Rotation) => {
@@ -140,6 +163,14 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    const selected=manualEngineer?engineers.find(x=>x.name===manualEngineer&&x.active):undefined;
    if(manualEngineer&&!selected){setNotice("Choose an active team member for the manual assignment.");return;}
    const scheduledStartAt=new Date(`${date}T${time}:00+05:30`).toISOString();
+   if(demoMode){
+     const rotation=rotationFor(kind);
+     const chosen=selected??engineers.find(x=>x.active&&!x.absent&&x.role==="Engineer"&&(rotation==="FTS"?x.ftsQueue:x.callQueue)&&!calls.some(c=>c.engineerId===x.id&&c.date===date&&c.time===time&&c.status!=="Completed"&&c.status!=="Cancelled"));
+     if(!chosen){setNotice("No eligible demo engineer is available for that time.");return;}
+     const item:Call={id:`demo-call-${Date.now()}`,kind,caseNumber:caseNumber.trim(),engineer:chosen.name,engineerId:chosen.id,date,time,notes:notes.trim(),status:"Scheduled",manual:Boolean(selected)};
+     setCalls(prev=>[item,...prev]);setShowNew(false);setCaseNumber("");setNotes("");setManualEngineer("");
+     setNotice(`Demo assignment created for ${item.engineer}. This change is local only.`);return;
+   }
    try {
      const response=await fetch("/api/assignments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,caseNumber:caseNumber.trim(),scheduledStartAt,notes:notes.trim(),manualEngineerId:selected?.id})});
      const data=await response.json();
@@ -152,6 +183,7 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not create assignment."); }
  };
  const updateEngineer = async (id:string,patch:Partial<Engineer>) => {
+   if(demoMode){setEngineers(prev=>prev.map(e=>e.id===id?{...e,...patch}:e));setNotice("Demo team member updated locally.");return;}
    try {
      const response=await fetch(`/api/engineers/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(patch)});
      const data=await response.json();
@@ -171,6 +203,10 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not create account."); }
  };
  const updateAttendance = async (id:string,action:"check-in"|"check-out",workMode?:"Office"|"WFH") => {
+   if(demoMode){
+     setEngineers(prev=>prev.map(member=>member.id===id?{...member,attendanceStatus:action==="check-in"?"Present": "Not checked in",attendanceWorkMode:action==="check-in"?(workMode??"Office"):undefined,absent:false}:member));
+     setNotice(action==="check-in"?"Demo attendance recorded locally.":"Demo check-out recorded locally.");return;
+   }
    try {
      const response=await fetch("/api/attendance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,engineerId:id,workMode})});
      const data=await response.json();
@@ -181,6 +217,11 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
  };
  const submitLeave = async (e:FormEvent) => {
    e.preventDefault();
+   if(demoMode){
+     if(!leaveStart||!leaveEnd||leaveEnd<leaveStart||!leaveReason.trim()){setNotice("Choose a valid date range and enter a reason.");return;}
+     setLeaves(prev=>[{id:`demo-leave-${Date.now()}`,engineerId:sessionUser.id,engineerName:sessionUser.name,startDate:leaveStart,endDate:leaveEnd,reason:leaveReason.trim(),status:"Pending"},...prev]);
+     setLeaveReason("");setNotice("Demo leave request submitted locally.");return;
+   }
    try {
      const response = await fetch("/api/leaves", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startDate: leaveStart, endDate: leaveEnd, reason: leaveReason }) });
      const data = await response.json();
@@ -189,6 +230,7 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not submit leave."); }
  };
  const updateLeaveStatus = async (leave:LeaveItem,status:LeaveItem["status"]) => {
+   if(demoMode){setLeaves(prev=>prev.map(item=>item.id===leave.id?{...item,status}:item));setNotice(`Demo leave request ${status.toLowerCase()} locally.`);return;}
    try {
      const response=await fetch(`/api/leaves/${leave.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
      const data=await response.json();
@@ -201,6 +243,11 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    e.preventDefault();
    const name=newName.trim();
    if(!name){setNotice("Enter a name.");return;}
+   if(demoMode){
+     if((newRole==="SSE"||newRole==="Team Lead"||newRole==="Manager")&&(newCallQueue||newFtsQueue)){setNotice("SSE, Team Leads and Managers cannot join automatic rotations.");return;}
+     const engineer:Engineer={id:`demo-eng-${Date.now()}`,name,role:newRole,active:true,callQueue:newRole==="Engineer"&&newCallQueue,ftsQueue:newRole==="Engineer"&&newFtsQueue,absent:false,attendanceStatus:"Not checked in"};
+     setEngineers(prev=>[...prev,engineer]);setNewName("");setNotice("Demo team member added locally.");return;
+   }
    try {
      const response=await fetch("/api/engineers",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,role:newRole,callQueue:newRole==="Engineer"&&newCallQueue,ftsQueue:newRole==="Engineer"&&newFtsQueue})});
      const data=await response.json();
@@ -209,6 +256,14 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not add team member."); }
  };
  const skipNext = async (rotation:Rotation) => {
+   if(demoMode){
+     const members=engineers.filter(e=>e.active&&!e.absent&&e.role==="Engineer"&&(rotation==="FTS"?e.ftsQueue:e.callQueue));
+     const candidate=members[rotationIndex[rotation]%Math.max(1,members.length)];
+     if(!candidate){setNotice("No eligible demo engineer to skip.");return;}
+     setSkipUntil(p=>({...p,[`${rotation}:${candidate.id}`]:(completedByRotation[rotation]+3)}));
+     setRotationIndex(p=>({...p,[rotation]:(rotationIndex[rotation]+1)%Math.max(1,members.length)}));
+     setNotice(`${candidate.name} skipped for the next three demo completions in this rotation.`);return;
+   }
    try {
      const response=await fetch("/api/rotations/skip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rotation})});
      const data=await response.json();
@@ -221,6 +276,11 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
  };
  const changeStatus = async (call:Call,status:Status) => {
    if(call.status==="Completed"||call.status==="Cancelled") return;
+   if(demoMode){
+     setCalls(prev=>prev.map(c=>c.id===call.id?{...c,status}:c));
+     if(status==="Completed"){const r=rotationFor(call.kind);setCompletedByRotation(p=>({...p,[r]:p[r]+1}));}
+     setNotice(`Demo assignment ${call.caseNumber} updated to ${status} locally.`);return;
+   }
    try {
      const response=await fetch(`/api/assignments/${call.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
      const data=await response.json();
@@ -235,7 +295,7 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
   <header className="minimal-header">
    <a className="brand" href="#" onClick={e=>{e.preventDefault();setArea("Overview");}}><span className="brand-mark"><Activity size={19}/></span><span>CallFlow</span></a>
    <nav className="top-nav" aria-label="Main navigation">{nav.map(n=><button key={n.label} onClick={()=>setArea(n.label)} className={area===n.label?"selected":""}>{n.label}</button>)}</nav>
-   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>Development mode</span></div>
+   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>{demoMode?"Local demo mode":"Development mode"}</span></div>
   </header>
   <div className="page-wrap">
    {notice&&<div className="notice" role="status"><span>{notice}</span>{engineers.length===0&&calls.length===0&&<button className="button primary compact" onClick={seedDemoData}>Load demo data</button>}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
