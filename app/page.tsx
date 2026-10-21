@@ -83,6 +83,18 @@ export default function Home() {
      return { id: a.id, kind: a.kind, caseNumber: a.caseNumber, engineerId: a.engineerId, engineer: byId.get(a.engineerId)?.name ?? "Unassigned member", date: dt.date, time: dt.time, notes: a.notes ?? "", status: a.status, manual: Boolean(a.manual) };
    }));
  };
+ const seedDemoData = async () => {
+   setNotice("Loading synthetic preview data…");
+   try {
+     const response = await fetch("/api/preview/seed", { method: "POST", cache: "no-store" });
+     const data = await response.json();
+     if (!response.ok) throw new Error(data.error ?? "Could not load demo data.");
+     await loadWorkspace();
+     setNotice(data.status === "already_seeded" ? "Demo data is already loaded." : `Demo data loaded: ${data.counts.engineers} team profiles, ${data.counts.assignments} calls and ${data.counts.leaveRequests} leave request.`);
+   } catch (error) {
+     setNotice(error instanceof Error ? error.message : "Could not load demo data.");
+   }
+ };
  useEffect(() => {
    let alive = true;
    (async () => {
@@ -226,7 +238,7 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>Development mode</span></div>
   </header>
   <div className="page-wrap">
-   {notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
+   {notice&&<div className="notice" role="status"><span>{notice}</span>{engineers.length===0&&calls.length===0&&<button className="button primary compact" onClick={seedDemoData}>Load demo data</button>}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
    {area==="Overview"&&thresholdCalls.length>0&&<div className={escalatedCalls.length?"alert-banner alert-critical":"alert-banner alert-warning"} role="alert"><span className="alert-symbol"><Activity size={19}/></span><div className="alert-copy"><strong>{escalatedCalls.length? "Escalation required":"Calls running late"}</strong><span>{escalatedCalls.length? `${escalatedCalls.length} call(s) have crossed the 10-minute escalation threshold.`:`${thresholdCalls.length} call(s) are at least 5 minutes past their scheduled time.`}</span></div><button className="alert-action" onClick={()=>{setArea("Assignments");setStatusFilter("All");setQuery("");}}>Review calls</button></div>}
    {area==="Overview"&&<>
     <div className="page-heading"><div><p className="eyebrow">{today}</p><h1>Overview</h1><p className="muted">Today's call assignment activity.</p></div><button className="button primary" onClick={()=>setShowNew(true)}><Plus size={16}/> New assignment</button></div>
