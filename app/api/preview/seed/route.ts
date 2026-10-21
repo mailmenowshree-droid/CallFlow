@@ -82,7 +82,7 @@ export async function POST() {
       return NextResponse.json({ status: "already_seeded", message: "Demo data has already been loaded; no records were changed." }, { headers });
     }
     await session.withTransaction(async () => {
-      await db.collection("preview_seed_markers").insertOne({ _id: markerId, createdAt: now }, { session });
+      await db.collection<{ _id: string; createdAt: Date }>("preview_seed_markers").insertOne({ _id: markerId, createdAt: now }, { session });
       const engineers = db.collection<EngineerRecord>("engineers");
       for (const engineer of roster) {
         await engineers.updateOne(
