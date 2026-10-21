@@ -77,7 +77,7 @@ export async function POST() {
   ];
 
   try {
-    const existingMarker = await db.collection("preview_seed_markers").findOne({ _id: markerId });
+    const existingMarker = await db.collection<{ _id: string; createdAt: Date }>("preview_seed_markers").findOne({ _id: markerId });
     if (existingMarker) {
       return NextResponse.json({ status: "already_seeded", message: "Demo data has already been loaded; no records were changed." }, { headers });
     }
@@ -122,7 +122,7 @@ export async function POST() {
     }, { headers });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === 11000) {
-      const marker = await db.collection("preview_seed_markers").findOne({ _id: markerId }).catch(() => null);
+      const marker = await db.collection<{ _id: string; createdAt: Date }>("preview_seed_markers").findOne({ _id: markerId }).catch(() => null);
       if (marker) return NextResponse.json({ status: "already_seeded", message: "Demo data has already been loaded; no records were changed." }, { headers });
     }
     console.error("CallFlow preview seed failed", error instanceof Error ? error.name : "UnknownError");
