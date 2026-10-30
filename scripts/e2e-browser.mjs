@@ -154,6 +154,21 @@ try {
   await accountPanel.getByRole("button", { name: "Create account" }).click();
   await page.getByText(`Account created for ${teamLead.email}.`, { exact: true }).waitFor();
 
+  // Manager also creates a synthetic privileged roster profile to verify Team Lead read-only rendering.
+  const managerProfileName = "Browser CI Manager Profile";
+  const rosterForm = page.locator(".add-member").first();
+  await rosterForm.getByLabel("Team member name").fill(managerProfileName);
+  await rosterForm.getByLabel("Role").selectOption("Manager");
+  await rosterForm.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByText("Team member added.", { exact: true }).waitFor();
+  const managerProfileRow = page.getByRole("row").filter({ hasText: managerProfileName });
+  await managerProfileRow.waitFor();
+  assert.deepEqual(
+    await managerProfileRow.getByLabel(`Role for ${managerProfileName}`).locator("option").allTextContents(),
+    ["Engineer", "SSE", "Team Lead", "Manager"],
+    "Manager can edit privileged roster profiles.",
+  );
+
   // Manager creates and completes a round-robin assignment in the browser.
   await navigation(page, "Assignments").click();
   await page.getByRole("button", { name: "New assignment" }).first().click();
@@ -184,6 +199,11 @@ try {
     ["Engineer", "SSE"],
     "Team Lead can edit only Engineer/SSE roster roles.",
   );
+  const readOnlyManagerRow = page.getByRole("row").filter({ hasText: managerProfileName });
+  assert.equal(await readOnlyManagerRow.getByText("Manager", { exact: true }).count(), 1, "Team Lead can see the privileged role.");
+  assert.equal(await readOnlyManagerRow.getByLabel(`Role for ${managerProfileName}`).count(), 0, "Team Lead cannot edit a Manager role.");
+  assert.equal(await readOnlyManagerRow.locator(".queue-checks").count(), 0, "Team Lead cannot edit privileged queue membership.");
+  assert.equal(await readOnlyManagerRow.getByRole("button", { name: "Mark absent" }).count(), 0, "Team Lead cannot mutate a privileged profile from the roster.");
   assert.equal(await page.locator(".account-panel").count(), 0, "Team Lead must not see Manager-only account provisioning.");
 
   // Team Lead can read reports, but does not receive Manager-only account controls.
