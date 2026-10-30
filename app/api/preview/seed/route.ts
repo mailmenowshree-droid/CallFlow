@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDatabase, getMongoClient } from "@/lib/mongodb";
-import type { EngineerRecord, AssignmentRecord, RotationKey } from "@/lib/callflow-types";
+import type { EngineerRecord, AssignmentRecord, RotationKey, RotationRecord } from "@/lib/callflow-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,7 +95,7 @@ export async function POST() {
         FE_CRU_EVENT: roster.filter(e => e.callQueue && e.role === "Engineer").map(e => e.id),
         FTS: roster.filter(e => e.ftsQueue && e.role === "Engineer").map(e => e.id),
       } satisfies Record<RotationKey, string[]>;
-      const rotations = db.collection("rotation_state");
+      const rotations = db.collection<RotationRecord>("rotation_state");
       for (const key of ["FE_CRU_EVENT", "FTS"] as const) {
         await rotations.updateOne(
           { _id: key },
