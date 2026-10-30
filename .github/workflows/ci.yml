@@ -8,12 +8,37 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      MONGODB_URI: mongodb://127.0.0.1:27017/callflow_ci_test?replicaSet=rs0
+      MONGODB_DB: callflow_ci_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Start an ephemeral MongoDB replica set
+        run: |
+          docker run --detach --name callflow-mongo --publish 27017:27017 mongo:7.0 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec callflow-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' 2>/dev/null | grep -q 1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec callflow-mongo mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec callflow-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' 2>/dev/null | grep -q true; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MongoDB replica set did not become writable."
+          docker logs callflow-mongo
+          exit 1
       - run: npm install
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Stop the ephemeral MongoDB replica set
+        if: always()
+        run: docker rm --force callflow-mongo || true

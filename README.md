@@ -37,10 +37,10 @@ npm test
 npm run build
 ```
 
-GitHub Actions runs these checks for pull requests and pushes to `main` and `feature/**` branches.
+GitHub Actions starts an ephemeral MongoDB 7 single-node replica set for integration tests. The replica set is isolated to the GitHub runner and uses the `callflow_ci_test` database; it does not access a deployed database. For local integration testing, set `MONGODB_URI` and `MONGODB_DB` to a disposable replica-set database. Without `MONGODB_URI`, the MongoDB integration suite is skipped while unit tests still run.
 
 ## Operational boundaries
 
 - MongoDB transactions require a replica set or sharded cluster.
 - Use only synthetic data in previews and tests. Never commit credentials, tokens, or real customer/case data.
-- Do not treat a successful build or preview deployment as proof of end-to-end operational readiness. Database concurrency, browser workflows, and production configuration must be verified separately.
+- Do not treat a successful build or preview deployment as proof of production readiness. Database concurrency, browser workflows, and production configuration must be verified separately.
