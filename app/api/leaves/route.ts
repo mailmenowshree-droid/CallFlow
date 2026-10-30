@@ -28,8 +28,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Choose a valid date range and enter a reason." }, { status: 400, headers });
     }
     const startDate = body.startDate as string;
-    const endDate = endDate as string;
-    const reason = reason as string;
+    const endDate = body.endDate as string;
+    const reason = body.reason as string;
     const dates: string[] = [];
     const cursor = new Date(startDate + "T12:00:00Z");
     const end = new Date(endDate + "T12:00:00Z");
