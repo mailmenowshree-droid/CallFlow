@@ -941,12 +941,8 @@ integration("MongoDB replica-set integration", () => {
     );
     expect(managerReview.status).toBe(403);
 
-    expect(await db.collection("leave_requests").find({
-      id: { $in: ["team-lead-own-leave", "manager-own-leave"] },
-    }).toArray()).toMatchObject([
-      { id: "team-lead-own-leave", status: "Pending" },
-      { id: "manager-own-leave", status: "Pending" },
-    ]);
+    expect(await db.collection("leave_requests").findOne({ id: "team-lead-own-leave" })).toMatchObject({ status: "Pending" });
+    expect(await db.collection("leave_requests").findOne({ id: "manager-own-leave" })).toMatchObject({ status: "Pending" });
     expect(await db.collection("audit_events").countDocuments({ eventType: "LEAVE_STATUS_CHANGED" })).toBe(0);
     expect(await db.collection("leave_capacity").countDocuments({ _id: day })).toBe(0);
   });
