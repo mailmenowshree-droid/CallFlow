@@ -74,6 +74,7 @@ integration("MongoDB replica-set integration", () => {
       "wfh_quota",
       "attendance_events",
       "role_policy_locks",
+      "preview_seed_markers",
     ];
     await Promise.all(collections.map((name) => db.collection(name).deleteMany({})));
     vi.mocked(requireSession).mockReset();
@@ -1150,6 +1151,64 @@ integration("MongoDB replica-set integration", () => {
         const response = await item.run();
         expect(response.status, item.name).toBe(403);
       }
+    } finally {
+      if (previousEnv.vercelEnv === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = previousEnv.vercelEnv;
+      if (previousEnv.seedEnabled === undefined) delete process.env.CALLFLOW_PREVIEW_SEED_ENABLED;
+      else process.env.CALLFLOW_PREVIEW_SEED_ENABLED = previousEnv.seedEnabled;
+      if (previousEnv.databaseName === undefined) delete process.env.MONGODB_DB;
+      else process.env.MONGODB_DB = previousEnv.databaseName;
+    }
+  });
+
+  it("seeds preview data once for a Manager without replacing existing records", async () => {
+    const previousEnv = {
+      vercelEnv: process.env.VERCEL_ENV,
+      seedEnabled: process.env.CALLFLOW_PREVIEW_SEED_ENABLED,
+      databaseName: process.env.MONGODB_DB,
+    };
+    process.env.VERCEL_ENV = "preview";
+    process.env.CALLFLOW_PREVIEW_SEED_ENABLED = "true";
+    process.env.MONGODB_DB = "callflow-preview";
+
+    const existingEngineer = { ...makeEngineer("preserved-preview-member"), name: "Preserved preview member" };
+    await db.collection<EngineerRecord>("engineers").insertOne(existingEngineer);
+    await db.collection("assignments").insertOne({
+      id: "preserved-preview-assignment",
+      engineerId: existingEngineer.id,
+      scheduledStartAt: startAt,
+      scheduledEndAt: endAt,
+      status: "Scheduled",
+    });
+
+    const demoEngineerIds = [
+      "demo-eng-01", "demo-eng-02", "demo-eng-03", "demo-eng-04",
+      "demo-eng-05", "demo-eng-06", "demo-sse-01", "demo-tl-01",
+    ];
+
+    try {
+      setSession("preview-seed-manager", "Manager");
+      const first = await postPreviewSeed();
+      expect(first.status).toBe(200);
+      expect(await first.json()).toMatchObject({
+        status: "seeded",
+        counts: { engineers: 8, assignments: 5, leaveRequests: 1 },
+      });
+
+      expect(await db.collection<EngineerRecord>("engineers").findOne({ id: existingEngineer.id }))
+        .toMatchObject({ name: "Preserved preview member", active: true });
+      expect(await db.collection("assignments").findOne({ id: "preserved-preview-assignment" })).not.toBeNull();
+      expect(await db.collection("engineers").countDocuments({ id: { $in: demoEngineerIds } })).toBe(8);
+      expect(await db.collection("assignments").countDocuments({ id: /^demo-assignment-/ })).toBe(5);
+      expect(await db.collection("leave_requests").countDocuments({ id: "demo-leave-pending" })).toBe(1);
+
+      setSession("preview-seed-manager", "Manager");
+      const second = await postPreviewSeed();
+      expect(second.status).toBe(200);
+      expect(await second.json()).toMatchObject({ status: "already_seeded" });
+      expect(await db.collection("engineers").countDocuments({ id: { $in: demoEngineerIds } })).toBe(8);
+      expect(await db.collection("assignments").countDocuments({ id: /^demo-assignment-/ })).toBe(5);
+      expect(await db.collection("preview_seed_markers").countDocuments({ _id: "callflow-demo-data-v1" })).toBe(1);
     } finally {
       if (previousEnv.vercelEnv === undefined) delete process.env.VERCEL_ENV;
       else process.env.VERCEL_ENV = previousEnv.vercelEnv;
