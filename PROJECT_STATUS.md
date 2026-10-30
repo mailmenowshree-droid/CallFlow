@@ -9,8 +9,8 @@ PR #4: https://github.com/mailmenowshree-droid/CallFlow/pull/4 (stacked on PR #3
 
 ## Latest verified CI
 
-- Commit: 1041f9aeea2aa167a0e02fc9b6bf33977cf33974
-- Workflow run #344: https://github.com/mailmenowshree-droid/CallFlow/actions/runs/41097847055
+- Commit: 9debb335bd255fa80658963119b206bc6ab57277
+- Workflow run #346: https://github.com/mailmenowshree-droid/CallFlow/actions/runs/41098512053
 - `npm ci`: passed using the committed lockfile
 - `npm audit`: 0 vulnerabilities
 - TypeScript typecheck: passed
@@ -70,5 +70,6 @@ PR #4: https://github.com/mailmenowshree-droid/CallFlow/pull/4 (stacked on PR #3
 - Synchronized engineer roster name, role, and active changes to matching user accounts in the same MongoDB transaction.
 - Added a transactional role-policy lock and active-Manager count check to prevent concurrent demotions/deactivations from removing the final active Manager.
 - Added SSE role regression coverage for self-scoped roster, assignment, and leave reads; own-assignment lifecycle updates; and denial of management, reporting, account-creation, rotation-skip, and other-user mutation routes.
-- GitHub Actions run #344 passed with 77 tests across 15 files, zero npm audit vulnerabilities, typecheck, lint, production build, HTTP E2E, and Chromium browser E2E.
+- Verified that engineer name, role, and active-state changes synchronize to the matching user account; added protection against concurrent removal of the final active Manager.
+- GitHub Actions run #346 passed with 77 tests across 15 files, zero npm audit vulnerabilities, typecheck, lint, production build, HTTP E2E, and Chromium browser E2E.
 
