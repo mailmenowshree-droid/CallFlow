@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
+import { isValidPassword } from "@/lib/password-policy";
 import type { EngineerRecord, EngineerRole, RotationKey, RotationRecord } from "@/lib/callflow-types";
 
 export const runtime = "nodejs";
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     const name = typeof value.name === "string" ? value.name.trim() : "";
     const password = typeof value.password === "string" ? value.password : "";
     if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-        !name || name.length > 120 || password.length < 14 || password.length > 1024 ||
+        !name || name.length > 120 || !isValidPassword(password) ||
         typeof value.role !== "string" || !roles.includes(value.role as EngineerRole)) {
       return NextResponse.json({ error: "Provide a valid name, email, role, and password of at least 14 characters." }, { status: 400, headers: noStore });
     }
