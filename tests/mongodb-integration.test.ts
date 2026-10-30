@@ -19,6 +19,7 @@ import { PATCH as patchEngineer } from "../app/api/engineers/[id]/route";
 import { POST as postEngineerLeaveExclusion } from "../app/api/engineers/[id]/leave/route";
 import { GET as getReports } from "../app/api/reports/route";
 import { POST as postUser } from "../app/api/users/route";
+import { POST as postBootstrapManager } from "../app/api/auth/bootstrap/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -407,6 +408,102 @@ integration("MongoDB replica-set integration", () => {
     }));
     expect(privilegedProfile.status).toBe(403);
     expect(await db.collection<EngineerRecord>("engineers").countDocuments({ name: "Unauthorized Manager Profile" })).toBe(0);
+  });
+
+  it("creates a linked team profile for the bootstrapped Manager", async () => {
+    const previousToken = process.env.CALLFLOW_BOOTSTRAP_TOKEN;
+    const previousEmail = process.env.BOOTSTRAP_MANAGER_EMAIL;
+    const token = "callflow-integration-bootstrap-token-2026-10-30";
+    const email = "bootstrap-manager@example.test";
+    const request = () => new NextRequest("http://localhost/api/auth/bootstrap", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: "Bootstrap Manager",
+        email,
+        password: "CallFlow-Integration-Password-2026!",
+      }),
+    });
+
+    process.env.CALLFLOW_BOOTSTRAP_TOKEN = token;
+    process.env.BOOTSTRAP_MANAGER_EMAIL = email;
+    try {
+      const response = await postBootstrapManager(request());
+      expect(response.status).toBe(201);
+      const user = await db.collection("users").findOne({ email });
+      expect(user).toMatchObject({ email, role: "Manager", active: true });
+      const profile = await db.collection<EngineerRecord>("engineers").findOne({ id: user?.id });
+      expect(profile).toMatchObject({
+        id: user?.id,
+        email,
+        name: "Bootstrap Manager",
+        role: "Manager",
+        active: true,
+        callQueue: false,
+        ftsQueue: false,
+        attendanceStatus: "Not checked in",
+      });
+
+      const secondSetup = await postBootstrapManager(request());
+      expect(secondSetup.status).toBe(409);
+      expect(await db.collection("users").countDocuments({ role: "Manager" })).toBe(1);
+      expect(await db.collection("engineers").countDocuments({ id: user?.id })).toBe(1);
+      expect(await db.collection("audit_events").countDocuments({ eventType: "INITIAL_MANAGER_BOOTSTRAPPED" })).toBe(1);
+    } finally {
+      if (previousToken === undefined) delete process.env.CALLFLOW_BOOTSTRAP_TOKEN;
+      else process.env.CALLFLOW_BOOTSTRAP_TOKEN = previousToken;
+      if (previousEmail === undefined) delete process.env.BOOTSTRAP_MANAGER_EMAIL;
+      else process.env.BOOTSTRAP_MANAGER_EMAIL = previousEmail;
+    }
+  });
+
+  it("creates linked team profiles when a Manager provisions Team Lead and Manager logins", async () => {
+    setSession("manager-user-creator", "Manager");
+    const teamLeadResponse = await postUser(new NextRequest("http://localhost/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Provisioned Team Lead",
+        email: "provisioned-team-lead@example.test",
+        password: "CallFlow-TeamLead-Password-2026!",
+        role: "Team Lead",
+      }),
+    }));
+    expect(teamLeadResponse.status).toBe(201);
+    const teamLeadPayload = await teamLeadResponse.json();
+    expect(teamLeadPayload.engineerCreated).toBe(true);
+    const teamLeadProfile = await db.collection<EngineerRecord>("engineers").findOne({ id: teamLeadPayload.user.id });
+    expect(teamLeadProfile).toMatchObject({
+      id: teamLeadPayload.user.id,
+      email: "provisioned-team-lead@example.test",
+      role: "Team Lead",
+      active: true,
+      callQueue: false,
+      ftsQueue: false,
+    });
+
+    setSession("manager-user-creator", "Manager");
+    const managerResponse = await postUser(new NextRequest("http://localhost/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Provisioned Manager",
+        email: "provisioned-manager@example.test",
+        password: "CallFlow-Manager-Password-2026!",
+        role: "Manager",
+      }),
+    }));
+    expect(managerResponse.status).toBe(201);
+    const managerPayload = await managerResponse.json();
+    expect(managerPayload.engineerCreated).toBe(true);
+    expect(await db.collection<EngineerRecord>("engineers").findOne({ id: managerPayload.user.id })).toMatchObject({
+      id: managerPayload.user.id,
+      email: "provisioned-manager@example.test",
+      role: "Manager",
+      active: true,
+      callQueue: false,
+      ftsQueue: false,
+    });
   });
 
   it("restricts engineer mutations and updates queue membership with an audit event", async () => {
