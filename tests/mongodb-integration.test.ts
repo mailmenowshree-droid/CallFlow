@@ -900,6 +900,57 @@ integration("MongoDB replica-set integration", () => {
     expect(engineer?.attendanceWorkMode).toBe("WFH");
   });
 
+  it("prevents Managers and Team Leads from approving their own leave requests", async () => {
+    const day = "2026-11-12";
+    await db.collection("leave_requests").insertMany([
+      {
+        id: "team-lead-own-leave",
+        engineerId: "team-lead-own",
+        engineerName: "Team Lead",
+        startDate: day,
+        endDate: day,
+        reason: "Team Lead self-review guard",
+        status: "Pending",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "manager-own-leave",
+        engineerId: "manager-own",
+        engineerName: "Manager",
+        startDate: day,
+        endDate: day,
+        reason: "Manager self-review guard",
+        status: "Pending",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    setSession("team-lead-own", "Team Lead");
+    const teamLeadReview = await patchLeave(
+      leavePatchRequest("Approved"),
+      { params: Promise.resolve({ id: "team-lead-own-leave" }) },
+    );
+    expect(teamLeadReview.status).toBe(403);
+
+    setSession("manager-own", "Manager");
+    const managerReview = await patchLeave(
+      leavePatchRequest("Rejected"),
+      { params: Promise.resolve({ id: "manager-own-leave" }) },
+    );
+    expect(managerReview.status).toBe(403);
+
+    expect(await db.collection("leave_requests").find({
+      id: { $in: ["team-lead-own-leave", "manager-own-leave"] },
+    }).toArray()).toMatchObject([
+      { id: "team-lead-own-leave", status: "Pending" },
+      { id: "manager-own-leave", status: "Pending" },
+    ]);
+    expect(await db.collection("audit_events").countDocuments({ eventType: "LEAVE_STATUS_CHANGED" })).toBe(0);
+    expect(await db.collection("leave_capacity").countDocuments({ _id: day })).toBe(0);
+  });
+
   it("serializes leave capacity, commits audit events, and releases capacity on cancellation", async () => {
     const day = "2026-11-10";
     await db.collection<EngineerRecord>("engineers").insertMany([
