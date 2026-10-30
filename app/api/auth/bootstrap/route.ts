@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
 import { isValidPassword } from "@/lib/password-policy";
+import type { EngineerRecord } from "@/lib/callflow-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,12 +57,18 @@ export async function POST(request: NextRequest) {
           passwordHash: await hash(password, 12),
           createdAt: now, updatedAt: now,
         }, { session });
+        await db.collection<EngineerRecord>("engineers").insertOne({
+          id, email, name, role: "Manager", active: true,
+          callQueue: false, ftsQueue: false, absent: false,
+          attendanceStatus: "Not checked in",
+          createdAt: now, updatedAt: now,
+        }, { session });
         await db.collection("audit_events").insertOne({
           eventType: "INITIAL_MANAGER_BOOTSTRAPPED",
           entityId: id,
           actorId: id,
           occurredAt: now,
-          metadata: { role: "Manager", email },
+          metadata: { role: "Manager", email, engineerProfileCreated: true },
         }, { session });
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
     } finally {
