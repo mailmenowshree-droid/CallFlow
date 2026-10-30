@@ -18,6 +18,8 @@ Call assignment and operations dashboard for Team Leads, Managers, and engineers
 
 The development-only fixed Manager identity is enabled only when `NODE_ENV=development`. Deployed Vercel Preview and production environments require a real session; Preview deployments do not receive an implicit Manager identity.
 
+Preview demo seeding is disabled by default. To enable it for QA, set `CALLFLOW_PREVIEW_SEED_ENABLED=true` only in the Vercel Preview environment and use a separate MongoDB database whose name ends in `-preview` or `_preview`. The seed endpoint also requires an authenticated Manager session. Never point a preview deployment at the production database.
+
 ## Local development
 
 ```bash

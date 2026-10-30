@@ -28,6 +28,7 @@ Baseline: `feature/mongodb-foundation`
 - The repository currently has no committed npm lockfile. Dependency resolution is therefore not reproducible across installs.
 - A prior install reported 15 dependency vulnerabilities (5 moderate, 7 high, 3 critical). The exact dependency tree and advisory set have not yet been reproduced; do not apply broad or major-version upgrades without a fresh audit and compatibility checks.
 - MongoDB transaction features require a replica set or sharded cluster.
+- Preview seeding requires an authenticated Manager, an explicit enable flag, and a separate database name ending in `-preview` or `_preview`; it is disabled by default.
 
 ## Next work
 
