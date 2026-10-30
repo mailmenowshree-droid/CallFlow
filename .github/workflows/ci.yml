@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24.11.0
       - name: Start an ephemeral MongoDB replica set
         run: |
           docker run --detach --name callflow-mongo --publish 27017:27017 mongo:7.0 --replSet rs0 --bind_ip_all
@@ -62,6 +62,7 @@ jobs:
           }
           NODE
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - run: npm run build
       - name: Stop the ephemeral MongoDB replica set

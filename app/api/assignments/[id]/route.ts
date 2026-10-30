@@ -23,11 +23,12 @@ function failure(error: unknown) {
   return NextResponse.json({ error: "The assignment service is temporarily unavailable." }, { status: 503, headers: noStore });
 }
 
-export async function PATCH(request: NextRequest, context: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const user = await requireSession();
     const db = await getDatabase();
-    const current = await db.collection<AssignmentRecord>("assignments").findOne({ id: context.params.id });
+    const current = await db.collection<AssignmentRecord>("assignments").findOne({ id: id });
     if (!current) {
       return NextResponse.json({ error: "Assignment not found." }, { status: 404, headers: noStore });
     }

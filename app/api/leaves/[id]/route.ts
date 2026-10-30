@@ -23,8 +23,9 @@ class LeaveMutationError extends Error {
   }
 }
 
-export async function PATCH(request: NextRequest, context: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const actor = await requireSession();
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !["Approved", "Rejected", "Cancelled"].includes(String(body.status))) {
@@ -41,7 +42,7 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
     try {
       await session.withTransaction(async () => {
         const leaves = db.collection<LeaveRecord>("leave_requests");
-        const leave = await leaves.findOne({ id: context.params.id }, { session });
+        const leave = await leaves.findOne({ id: id }, { session });
         if (!leave) throw new LeaveMutationError("NOT_FOUND");
 
         const transitionError = validateLeaveTransition({
@@ -68,7 +69,7 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
         }
 
         const updated = await leaves.updateOne(
-          { id: context.params.id, status: leave.status },
+          { id: id, status: leave.status },
           { $set: { status: nextStatus, updatedAt: now, reviewedBy: actor.id, reviewedAt: now } },
           { session },
         );
@@ -76,13 +77,13 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
 
         await db.collection("audit_events").insertOne({
           eventType: "LEAVE_STATUS_CHANGED",
-          entityId: context.params.id,
+          entityId: id,
           actorId: actor.id,
           occurredAt: now,
           metadata: { from: leave.status, to: nextStatus },
         }, { session });
 
-        result = { id: context.params.id, status: nextStatus };
+        result = { id: id, status: nextStatus };
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
     } finally {
       await session.endSession();

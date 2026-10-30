@@ -36,7 +36,7 @@ beforeEach(() => {
   process.env.SESSION_SECRET = secret;
   cookieToken = null;
   mocks.cookies.mockReset();
-  mocks.cookies.mockImplementation(() => ({
+  mocks.cookies.mockImplementation(async () => ({
     get: (name: string) => name === SESSION_COOKIE && cookieToken
       ? { value: cookieToken }
       : undefined,

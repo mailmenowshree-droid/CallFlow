@@ -41,7 +41,7 @@ export async function readSession(): Promise<SessionUser | null> {
       role: "Manager",
     };
   }
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, getSessionSecret(), {
