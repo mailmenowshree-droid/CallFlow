@@ -55,6 +55,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Name, role, and queue membership are required." }, { status: 400, headers: noStore });
     }
     const role = value.role as EngineerRole;
+    if (actor.role === "Team Lead" && role !== "Engineer" && role !== "SSE") {
+      return NextResponse.json({ error: "Only a Manager can create Team Lead or Manager profiles." }, { status: 403, headers: noStore });
+    }
     if ((role === "Team Lead" || role === "Manager") && (value.callQueue || value.ftsQueue)) {
       return NextResponse.json({ error: "Team Leads and Managers cannot be rotation members." }, { status: 422, headers: noStore });
     }
