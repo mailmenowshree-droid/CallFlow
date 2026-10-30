@@ -36,6 +36,31 @@ jobs:
           docker logs callflow-mongo
           exit 1
       - run: npm install
+      - name: Report dependency audit findings
+        run: |
+          npm audit --json > /tmp/callflow-npm-audit.json 2> /tmp/callflow-npm-audit.stderr || true
+          node <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = "/tmp/callflow-npm-audit.json";
+          const raw = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, "utf8") : "";
+          try {
+            const report = JSON.parse(raw);
+            const totals = report.metadata?.vulnerabilities ?? {};
+            console.log("npm audit totals:", JSON.stringify(totals));
+            for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+              console.log(`${name}: severity=${item.severity}; direct=${item.isDirect}; range=${item.range}`);
+              for (const advisory of item.via ?? []) {
+                if (typeof advisory === "object") console.log(`  ${advisory.title} ${advisory.url}`);
+              }
+              console.log(`  fixAvailable=${JSON.stringify(item.fixAvailable)}`);
+            }
+          } catch {
+            console.log("npm audit did not produce a JSON report.");
+            const errorPath = "/tmp/callflow-npm-audit.stderr";
+            if (fs.existsSync(errorPath)) console.log(fs.readFileSync(errorPath, "utf8"));
+            console.log(raw);
+          }
+          NODE
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
