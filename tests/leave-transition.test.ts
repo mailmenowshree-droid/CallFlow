@@ -6,11 +6,17 @@ const base = {
   actorId: "engineer-1",
   engineerId: "engineer-1",
 };
+const reviewerBase = { ...base, actorId: "reviewer-1" };
 
 describe("validateLeaveTransition", () => {
   it("allows a team lead or manager to review pending leave", () => {
-    expect(validateLeaveTransition({ ...base, nextStatus: "Approved", actorRole: "Team Lead" })).toBeNull();
-    expect(validateLeaveTransition({ ...base, nextStatus: "Rejected", actorRole: "Manager" })).toBeNull();
+    expect(validateLeaveTransition({ ...reviewerBase, nextStatus: "Approved", actorRole: "Team Lead" })).toBeNull();
+    expect(validateLeaveTransition({ ...reviewerBase, nextStatus: "Rejected", actorRole: "Manager" })).toBeNull();
+  });
+
+  it("prevents Managers and Team Leads from approving or rejecting their own leave", () => {
+    expect(validateLeaveTransition({ ...base, nextStatus: "Approved", actorRole: "Team Lead" })).toBe("FORBIDDEN");
+    expect(validateLeaveTransition({ ...base, nextStatus: "Rejected", actorRole: "Manager" })).toBe("FORBIDDEN");
   });
 
   it("allows a user to cancel their own pending or approved leave", () => {
@@ -38,11 +44,11 @@ describe("validateLeaveTransition", () => {
   });
 
   it("prevents re-reviewing approved or closed leave and cancelling rejected leave", () => {
-    expect(validateLeaveTransition({ ...base, currentStatus: "Approved", nextStatus: "Rejected", actorRole: "Manager" }))
+    expect(validateLeaveTransition({ ...reviewerBase, currentStatus: "Approved", nextStatus: "Rejected", actorRole: "Manager" }))
       .toBe("ALREADY_REVIEWED");
-    expect(validateLeaveTransition({ ...base, currentStatus: "Rejected", nextStatus: "Cancelled", actorRole: "Manager" }))
+    expect(validateLeaveTransition({ ...reviewerBase, currentStatus: "Rejected", nextStatus: "Cancelled", actorRole: "Manager" }))
       .toBe("CLOSED");
-    expect(validateLeaveTransition({ ...base, currentStatus: "Cancelled", nextStatus: "Approved", actorRole: "Manager" }))
+    expect(validateLeaveTransition({ ...reviewerBase, currentStatus: "Cancelled", nextStatus: "Approved", actorRole: "Manager" }))
       .toBe("ALREADY_REVIEWED");
   });
 });

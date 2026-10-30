@@ -16,8 +16,10 @@ import { POST as postRotationSkip } from "../app/api/rotations/skip/route";
 import { POST as postAttendance } from "../app/api/attendance/route";
 import { GET as getEngineers, POST as postEngineer } from "../app/api/engineers/route";
 import { PATCH as patchEngineer } from "../app/api/engineers/[id]/route";
+import { POST as postEngineerLeaveExclusion } from "../app/api/engineers/[id]/leave/route";
 import { GET as getReports } from "../app/api/reports/route";
 import { POST as postUser } from "../app/api/users/route";
+import { POST as postBootstrapManager } from "../app/api/auth/bootstrap/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -193,6 +195,15 @@ integration("MongoDB replica-set integration", () => {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status }),
+    },
+  );
+
+  const engineerLeaveExclusionRequest = (action: "start" | "clear") => new NextRequest(
+    "http://localhost/api/engineers/leave-exclusion-member/leave",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
     },
   );
 
@@ -399,6 +410,102 @@ integration("MongoDB replica-set integration", () => {
     expect(await db.collection<EngineerRecord>("engineers").countDocuments({ name: "Unauthorized Manager Profile" })).toBe(0);
   });
 
+  it("creates a linked team profile for the bootstrapped Manager", async () => {
+    const previousToken = process.env.CALLFLOW_BOOTSTRAP_TOKEN;
+    const previousEmail = process.env.BOOTSTRAP_MANAGER_EMAIL;
+    const token = "callflow-integration-bootstrap-token-2026-10-30";
+    const email = "bootstrap-manager@example.test";
+    const request = () => new NextRequest("http://localhost/api/auth/bootstrap", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: "Bootstrap Manager",
+        email,
+        password: "CallFlow-Integration-Password-2026!",
+      }),
+    });
+
+    process.env.CALLFLOW_BOOTSTRAP_TOKEN = token;
+    process.env.BOOTSTRAP_MANAGER_EMAIL = email;
+    try {
+      const response = await postBootstrapManager(request());
+      expect(response.status).toBe(201);
+      const user = await db.collection("users").findOne({ email });
+      expect(user).toMatchObject({ email, role: "Manager", active: true });
+      const profile = await db.collection<EngineerRecord>("engineers").findOne({ id: user?.id });
+      expect(profile).toMatchObject({
+        id: user?.id,
+        email,
+        name: "Bootstrap Manager",
+        role: "Manager",
+        active: true,
+        callQueue: false,
+        ftsQueue: false,
+        attendanceStatus: "Not checked in",
+      });
+
+      const secondSetup = await postBootstrapManager(request());
+      expect(secondSetup.status).toBe(409);
+      expect(await db.collection("users").countDocuments({ role: "Manager" })).toBe(1);
+      expect(await db.collection("engineers").countDocuments({ id: user?.id })).toBe(1);
+      expect(await db.collection("audit_events").countDocuments({ eventType: "INITIAL_MANAGER_BOOTSTRAPPED" })).toBe(1);
+    } finally {
+      if (previousToken === undefined) delete process.env.CALLFLOW_BOOTSTRAP_TOKEN;
+      else process.env.CALLFLOW_BOOTSTRAP_TOKEN = previousToken;
+      if (previousEmail === undefined) delete process.env.BOOTSTRAP_MANAGER_EMAIL;
+      else process.env.BOOTSTRAP_MANAGER_EMAIL = previousEmail;
+    }
+  });
+
+  it("creates linked team profiles when a Manager provisions Team Lead and Manager logins", async () => {
+    setSession("manager-user-creator", "Manager");
+    const teamLeadResponse = await postUser(new NextRequest("http://localhost/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Provisioned Team Lead",
+        email: "provisioned-team-lead@example.test",
+        password: "CallFlow-TeamLead-Password-2026!",
+        role: "Team Lead",
+      }),
+    }));
+    expect(teamLeadResponse.status).toBe(201);
+    const teamLeadPayload = await teamLeadResponse.json();
+    expect(teamLeadPayload.engineerCreated).toBe(true);
+    const teamLeadProfile = await db.collection<EngineerRecord>("engineers").findOne({ id: teamLeadPayload.user.id });
+    expect(teamLeadProfile).toMatchObject({
+      id: teamLeadPayload.user.id,
+      email: "provisioned-team-lead@example.test",
+      role: "Team Lead",
+      active: true,
+      callQueue: false,
+      ftsQueue: false,
+    });
+
+    setSession("manager-user-creator", "Manager");
+    const managerResponse = await postUser(new NextRequest("http://localhost/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Provisioned Manager",
+        email: "provisioned-manager@example.test",
+        password: "CallFlow-Manager-Password-2026!",
+        role: "Manager",
+      }),
+    }));
+    expect(managerResponse.status).toBe(201);
+    const managerPayload = await managerResponse.json();
+    expect(managerPayload.engineerCreated).toBe(true);
+    expect(await db.collection<EngineerRecord>("engineers").findOne({ id: managerPayload.user.id })).toMatchObject({
+      id: managerPayload.user.id,
+      email: "provisioned-manager@example.test",
+      role: "Manager",
+      active: true,
+      callQueue: false,
+      ftsQueue: false,
+    });
+  });
+
   it("restricts engineer mutations and updates queue membership with an audit event", async () => {
     await db.collection<EngineerRecord>("engineers").insertOne({
       ...makeEngineer("engineer-patch"),
@@ -517,6 +624,53 @@ integration("MongoDB replica-set integration", () => {
       role: "Manager",
       active: true,
     });
+  });
+
+  it("restricts temporary leave exclusions and commits their audit events with the roster update", async () => {
+    const memberId = "leave-exclusion-member";
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer(memberId));
+
+    setSession("leave-exclusion-lead", "Team Lead");
+    const started = await postEngineerLeaveExclusion(
+      engineerLeaveExclusionRequest("start"),
+      { params: Promise.resolve({ id: memberId }) },
+    );
+    expect(started.status).toBe(200);
+    const startedPayload = await started.json();
+    expect(typeof startedPayload.leaveUntil).toBe("string");
+    const afterStart = await db.collection<EngineerRecord>("engineers").findOne({ id: memberId });
+    expect(afterStart?.leaveUntil).toBeInstanceOf(Date);
+    expect(afterStart?.leaveUntil?.getTime()).toBeGreaterThan(Date.now());
+    expect(await db.collection("audit_events").findOne({
+      eventType: "LEAVE_EXCLUSION_STARTED",
+      entityId: memberId,
+      actorId: "leave-exclusion-lead",
+    })).toMatchObject({ metadata: { durationHours: 24 } });
+
+    setSession(memberId, "Engineer");
+    const forbiddenClear = await postEngineerLeaveExclusion(
+      engineerLeaveExclusionRequest("clear"),
+      { params: Promise.resolve({ id: memberId }) },
+    );
+    expect(forbiddenClear.status).toBe(403);
+    expect((await db.collection<EngineerRecord>("engineers").findOne({ id: memberId }))?.leaveUntil).toBeInstanceOf(Date);
+
+    setSession("leave-exclusion-manager", "Manager");
+    const cleared = await postEngineerLeaveExclusion(
+      engineerLeaveExclusionRequest("clear"),
+      { params: Promise.resolve({ id: memberId }) },
+    );
+    expect(cleared.status).toBe(200);
+    expect((await db.collection<EngineerRecord>("engineers").findOne({ id: memberId }))?.leaveUntil).toBeUndefined();
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "LEAVE_EXCLUSION_STARTED",
+      entityId: memberId,
+    })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "LEAVE_EXCLUSION_CLEARED",
+      entityId: memberId,
+      actorId: "leave-exclusion-manager",
+    })).toBe(1);
   });
 
   it("limits SSE roster and record access to self while permitting own assignment updates", async () => {
@@ -744,6 +898,53 @@ integration("MongoDB replica-set integration", () => {
     const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "wfh-route-race" });
     expect(engineer?.attendanceStatus).toBe("Present");
     expect(engineer?.attendanceWorkMode).toBe("WFH");
+  });
+
+  it("prevents Managers and Team Leads from approving their own leave requests", async () => {
+    const day = "2026-11-12";
+    await db.collection("leave_requests").insertMany([
+      {
+        id: "team-lead-own-leave",
+        engineerId: "team-lead-own",
+        engineerName: "Team Lead",
+        startDate: day,
+        endDate: day,
+        reason: "Team Lead self-review guard",
+        status: "Pending",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "manager-own-leave",
+        engineerId: "manager-own",
+        engineerName: "Manager",
+        startDate: day,
+        endDate: day,
+        reason: "Manager self-review guard",
+        status: "Pending",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    setSession("team-lead-own", "Team Lead");
+    const teamLeadReview = await patchLeave(
+      leavePatchRequest("Approved"),
+      { params: Promise.resolve({ id: "team-lead-own-leave" }) },
+    );
+    expect(teamLeadReview.status).toBe(403);
+
+    setSession("manager-own", "Manager");
+    const managerReview = await patchLeave(
+      leavePatchRequest("Rejected"),
+      { params: Promise.resolve({ id: "manager-own-leave" }) },
+    );
+    expect(managerReview.status).toBe(403);
+
+    expect(await db.collection("leave_requests").findOne({ id: "team-lead-own-leave" })).toMatchObject({ status: "Pending" });
+    expect(await db.collection("leave_requests").findOne({ id: "manager-own-leave" })).toMatchObject({ status: "Pending" });
+    expect(await db.collection("audit_events").countDocuments({ eventType: "LEAVE_STATUS_CHANGED" })).toBe(0);
+    expect(await db.collection<{ _id: string }>("leave_capacity").countDocuments({ _id: day })).toBe(0);
   });
 
   it("serializes leave capacity, commits audit events, and releases capacity on cancellation", async () => {
