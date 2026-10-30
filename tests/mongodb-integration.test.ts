@@ -1208,7 +1208,7 @@ integration("MongoDB replica-set integration", () => {
       expect(await second.json()).toMatchObject({ status: "already_seeded" });
       expect(await db.collection("engineers").countDocuments({ id: { $in: demoEngineerIds } })).toBe(8);
       expect(await db.collection("assignments").countDocuments({ id: /^demo-assignment-/ })).toBe(5);
-      expect(await db.collection("preview_seed_markers").countDocuments({ _id: "callflow-demo-data-v1" })).toBe(1);
+      expect(await db.collection<{ _id: string }>("preview_seed_markers").countDocuments({ _id: "callflow-demo-data-v1" })).toBe(1);
     } finally {
       if (previousEnv.vercelEnv === undefined) delete process.env.VERCEL_ENV;
       else process.env.VERCEL_ENV = previousEnv.vercelEnv;
