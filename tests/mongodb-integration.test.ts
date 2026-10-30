@@ -189,6 +189,7 @@ integration("MongoDB replica-set integration", () => {
     await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("eng-complete"));
     await seedRotation(["eng-complete"]);
     const assignment = await createAssignment(assignmentInput("complete-once"));
+    await transitionAssignment(assignment.id, "In Progress", "manager-start");
 
     const results = await Promise.allSettled([
       transitionAssignment(assignment.id, "Completed", "manager-1"),
@@ -204,7 +205,7 @@ integration("MongoDB replica-set integration", () => {
 
     const rotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" });
     expect(rotation?.completedAssignments).toBe(1);
-    expect(await db.collection("audit_events").countDocuments({ eventType: "ASSIGNMENT_STATUS_CHANGED" })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({ eventType: "ASSIGNMENT_STATUS_CHANGED", "metadata.to": "Completed" })).toBe(1);
   });
 
   it("serializes same-day WFH check-ins and records only one event", async () => {
