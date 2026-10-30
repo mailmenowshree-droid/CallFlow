@@ -41,7 +41,41 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         const collection = db.collection<EngineerRecord>("engineers");
         const current = await collection.findOne({ id: id }, { session });
         if (!current) throw new Error("NOT_FOUND");
+        const users = db.collection<{ id: string; name: string; role: EngineerRole; active: boolean }>("users");
+        const currentUser = await users.findOne({ id: current.id }, { session });
+        if (
+          actor.role === "Team Lead" &&
+          (
+            (current.role !== "Engineer" && current.role !== "SSE") ||
+            (currentUser && currentUser.role !== "Engineer" && currentUser.role !== "SSE")
+          )
+        ) {
+          throw new Error("FORBIDDEN");
+        }
         const nextRole = (value.role as EngineerRole | undefined) ?? current.role;
+        if (
+          actor.role === "Team Lead" &&
+          value.role !== undefined &&
+          nextRole !== "Engineer" &&
+          nextRole !== "SSE"
+        ) {
+          throw new Error("FORBIDDEN");
+        }
+        const nextActive = (value.active as boolean | undefined) ?? current.active;
+        const removingActiveManager = currentUser?.role === "Manager" &&
+          currentUser.active &&
+          (nextRole !== "Manager" || !nextActive);
+        if (removingActiveManager) {
+          // Serialize Manager demotions/deactivations so concurrent reviews cannot
+          // each observe the same final Manager and both remove it.
+          await db.collection("role_policy_locks").updateOne(
+            { _id: "active-manager-accounts" },
+            { $inc: { version: 1 }, $setOnInsert: { createdAt: now } },
+            { upsert: true, session },
+          );
+          const activeManagers = await users.countDocuments({ role: "Manager", active: true }, { session });
+          if (activeManagers <= 1) throw new Error("LAST_ACTIVE_MANAGER");
+        }
         const callQueue = (value.callQueue as boolean | undefined) ?? current.callQueue;
         const ftsQueue = (value.ftsQueue as boolean | undefined) ?? current.ftsQueue;
         if ((nextRole === "Team Lead" || nextRole === "Manager" || nextRole === "SSE") && (callQueue || ftsQueue)) {
@@ -50,7 +84,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         const patch: Partial<EngineerRecord> = {
           ...(typeof value.name === "string" ? { name: value.name.trim() } : {}),
           role: nextRole,
-          active: (value.active as boolean | undefined) ?? current.active,
+          active: nextActive,
           absent: (value.absent as boolean | undefined) ?? current.absent ?? false,
           attendanceStatus: value.absent === true ? "Absent" : value.absent === false && current.absent ? "Not checked in" : current.attendanceStatus ?? "Not checked in",
           callQueue: nextRole === "Engineer" && callQueue,
@@ -58,6 +92,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           updatedAt: now,
         };
         await collection.updateOne({ id: current.id }, { $set: patch }, { session });
+        const userFields: { name?: string; role?: EngineerRole; active?: boolean; updatedAt: Date } = { updatedAt: now };
+        if (typeof value.name === "string") userFields.name = value.name.trim();
+        if (value.role !== undefined) userFields.role = nextRole;
+        if (value.active !== undefined) userFields.active = nextActive;
+        if (Object.keys(userFields).length > 1) {
+          await users.updateOne({ id: current.id }, { $set: userFields }, { session });
+        }
         const memberships: Array<[RotationKey, boolean, boolean]> = [
           ["FE_CRU_EVENT", current.callQueue, patch.callQueue ?? current.callQueue],
           ["FTS", current.ftsQueue, patch.ftsQueue ?? current.ftsQueue],
@@ -105,6 +146,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to perform this action." }, { status: 403, headers: noStore });
     if (error instanceof Error && error.message === "NOT_FOUND") return NextResponse.json({ error: "Team member not found." }, { status: 404, headers: noStore });
     if (error instanceof Error && error.message === "INVALID_QUEUE_ROLE") return NextResponse.json({ error: "SSE, Team Leads and Managers cannot join automatic rotations." }, { status: 422, headers: noStore });
+    if (error instanceof Error && error.message === "LAST_ACTIVE_MANAGER") return NextResponse.json({ error: "At least one other active Manager account must remain." }, { status: 409, headers: noStore });
     return NextResponse.json({ error: "The team service is temporarily unavailable." }, { status: 503, headers: noStore });
   }
 }
