@@ -58,7 +58,7 @@ The HTTP end-to-end smoke test requires a disposable MongoDB replica set in MONG
 
 GitHub Actions starts an ephemeral MongoDB 7 single-node replica set and runs dependency installation, audit reporting, typecheck, lint, unit/integration tests, production build, and the HTTP end-to-end smoke test. The latest verified run is recorded in PROJECT_STATUS.md.
 
-The current automated end-to-end test exercises the HTTP/API workflows. Browser-driven UI regression (including real browser sign-in and CSV download interaction) remains a separate verification item.
+GitHub Actions also runs `scripts/e2e-browser.mjs` against the production build using Chromium and Playwright 1.56.1. It covers Manager bootstrap/login, Engineer and Team Lead provisioning/login, role-specific UI controls, assignment status transitions, the report CSV download, WFH attendance, leave approval/cancellation, and logout. Playwright and Chromium are installed ephemerally on the CI runner and are not application dependencies.
 
 ## Operational boundaries
 
