@@ -12,6 +12,8 @@ import { POST as postLeave } from "../app/api/leaves/route";
 import { PATCH as patchLeave } from "../app/api/leaves/[id]/route";
 import { POST as postRotationSkip } from "../app/api/rotations/skip/route";
 import { POST as postAttendance } from "../app/api/attendance/route";
+import { POST as postEngineer } from "../app/api/engineers/route";
+import { PATCH as patchEngineer } from "../app/api/engineers/[id]/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -117,6 +119,26 @@ integration("MongoDB replica-set integration", () => {
     return result;
   }
 
+
+  const engineerPostRequest = (body: {
+    name: string;
+    role: "Engineer" | "SSE" | "Team Lead" | "Manager";
+    callQueue: boolean;
+    ftsQueue: boolean;
+  }) => new NextRequest("http://localhost/api/engineers", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const engineerPatchRequest = (body: Record<string, unknown>) => new NextRequest(
+    "http://localhost/api/engineers/engineer-id",
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 
   const attendanceRequest = (body: { action: "check-in" | "check-out"; workMode?: "Office" | "WFH"; engineerId?: string }) => new NextRequest(
     "http://localhost/api/attendance",
@@ -313,6 +335,78 @@ integration("MongoDB replica-set integration", () => {
     expect([first.ok, second.ok, third.ok]).toEqual([true, true, false]);
     if (!third.ok) expect(third.reason).toBe("limit");
     expect(await db.collection("attendance_events").countDocuments({ eventType: "WFH_CHECKED_IN" })).toBe(2);
+  });
+
+  it("creates an engineer and rotation memberships atomically, rejecting invalid SSE queue access", async () => {
+    setSession("manager-create", "Manager");
+    const created = await postEngineer(engineerPostRequest({
+      name: "Created Engineer",
+      role: "Engineer",
+      callQueue: true,
+      ftsQueue: true,
+    }));
+    expect(created.status).toBe(201);
+    const payload = await created.json();
+    const engineer = payload.engineer as EngineerRecord;
+
+    const callRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" });
+    const ftsRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FTS" });
+    expect(callRotation?.engineerIds).toContain(engineer.id);
+    expect(ftsRotation?.engineerIds).toContain(engineer.id);
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "ENGINEER_CREATED",
+      entityId: engineer.id,
+      actorId: "manager-create",
+    })).toBe(1);
+
+    setSession("team-lead-create", "Team Lead");
+    const invalidSse = await postEngineer(engineerPostRequest({
+      name: "Invalid SSE",
+      role: "SSE",
+      callQueue: true,
+      ftsQueue: false,
+    }));
+    expect(invalidSse.status).toBe(422);
+    expect(await db.collection<EngineerRecord>("engineers").countDocuments({ name: "Invalid SSE" })).toBe(0);
+  });
+
+  it("restricts engineer mutations and updates queue membership with an audit event", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne({
+      ...makeEngineer("engineer-patch"),
+      callQueue: true,
+      ftsQueue: true,
+    });
+    await seedRotation(["engineer-patch", "other-call"], "FE_CRU_EVENT");
+    await seedRotation(["engineer-patch", "other-fts"], "FTS");
+
+    setSession("engineer-patch", "Engineer");
+    const forbidden = await patchEngineer(
+      engineerPatchRequest({ name: "Unauthorized rename" }),
+      { params: Promise.resolve({ id: "engineer-patch" }) },
+    );
+    expect(forbidden.status).toBe(403);
+
+    setSession("team-lead-patch", "Team Lead");
+    const updated = await patchEngineer(
+      engineerPatchRequest({ name: "Updated Engineer", callQueue: false }),
+      { params: Promise.resolve({ id: "engineer-patch" }) },
+    );
+    expect(updated.status).toBe(200);
+
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "engineer-patch" });
+    expect(engineer?.name).toBe("Updated Engineer");
+    expect(engineer?.callQueue).toBe(false);
+    expect(engineer?.ftsQueue).toBe(true);
+
+    const callRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" });
+    const ftsRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FTS" });
+    expect(callRotation?.engineerIds).not.toContain("engineer-patch");
+    expect(ftsRotation?.engineerIds).toContain("engineer-patch");
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "ENGINEER_UPDATED",
+      entityId: "engineer-patch",
+      actorId: "team-lead-patch",
+    })).toBe(1);
   });
 
   it("enforces check-in and check-out state transitions and audits accepted events", async () => {
