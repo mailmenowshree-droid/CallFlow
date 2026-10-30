@@ -8,9 +8,16 @@ import { AssignmentServiceError, createAssignment } from "@/lib/assignment-servi
 import { LifecycleError, transitionAssignment } from "@/lib/assignment-lifecycle";
 import { reserveWfhDay, type WfhReservationResult } from "@/lib/wfh-quota";
 import type { EngineerRecord, RotationRecord } from "@/lib/callflow-types";
-import { POST as postLeave } from "../app/api/leaves/route";
+import { GET as getAssignments, POST as postAssignment } from "../app/api/assignments/route";
+import { PATCH as patchAssignment } from "../app/api/assignments/[id]/route";
+import { POST as postLeave, GET as getLeaves } from "../app/api/leaves/route";
 import { PATCH as patchLeave } from "../app/api/leaves/[id]/route";
 import { POST as postRotationSkip } from "../app/api/rotations/skip/route";
+import { POST as postAttendance } from "../app/api/attendance/route";
+import { GET as getEngineers, POST as postEngineer } from "../app/api/engineers/route";
+import { PATCH as patchEngineer } from "../app/api/engineers/[id]/route";
+import { GET as getReports } from "../app/api/reports/route";
+import { POST as postUser } from "../app/api/users/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -45,12 +52,17 @@ integration("MongoDB replica-set integration", () => {
   });
 
   const setSession = (id: string, role: SessionUser["role"]) => {
-    vi.mocked(requireSession).mockResolvedValueOnce(makeSession(id, role));
+    const session = makeSession(id, role);
+    vi.mocked(requireSession).mockImplementationOnce(async (allowedRoles) => {
+      if (allowedRoles && !allowedRoles.includes(role)) throw new Error("FORBIDDEN");
+      return session;
+    });
   };
 
   async function resetDatabase() {
     const collections = [
       "engineers",
+      "users",
       "assignments",
       "rotation_state",
       "audit_events",
@@ -58,6 +70,7 @@ integration("MongoDB replica-set integration", () => {
       "leave_capacity",
       "wfh_quota",
       "attendance_events",
+      "role_policy_locks",
     ];
     await Promise.all(collections.map((name) => db.collection(name).deleteMany({})));
     vi.mocked(requireSession).mockReset();
@@ -116,6 +129,44 @@ integration("MongoDB replica-set integration", () => {
     return result;
   }
 
+
+  const engineerPostRequest = (body: {
+    name: string;
+    role: "Engineer" | "SSE" | "Team Lead" | "Manager";
+    callQueue: boolean;
+    ftsQueue: boolean;
+  }) => new NextRequest("http://localhost/api/engineers", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const engineerPatchRequest = (body: Record<string, unknown>) => new NextRequest(
+    "http://localhost/api/engineers/engineer-id",
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+  const assignmentPatchRequest = (id: string, status: "In Progress" | "Completed" | "Needs attention" | "Cancelled") => new NextRequest(
+    `http://localhost/api/assignments/${id}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+  );
+
+  const attendanceRequest = (body: { action: "check-in" | "check-out"; workMode?: "Office" | "WFH"; engineerId?: string }) => new NextRequest(
+    "http://localhost/api/attendance",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 
   const rotationSkipRequest = (rotation: "FE_CRU_EVENT" | "FTS") => new NextRequest(
     "http://localhost/api/rotations/skip",
@@ -303,6 +354,396 @@ integration("MongoDB replica-set integration", () => {
     expect([first.ok, second.ok, third.ok]).toEqual([true, true, false]);
     if (!third.ok) expect(third.reason).toBe("limit");
     expect(await db.collection("attendance_events").countDocuments({ eventType: "WFH_CHECKED_IN" })).toBe(2);
+  });
+
+  it("creates an engineer and rotation memberships atomically, rejecting invalid SSE queue access", async () => {
+    setSession("manager-create", "Manager");
+    const created = await postEngineer(engineerPostRequest({
+      name: "Created Engineer",
+      role: "Engineer",
+      callQueue: true,
+      ftsQueue: true,
+    }));
+    expect(created.status).toBe(201);
+    const payload = await created.json();
+    const engineer = payload.engineer as EngineerRecord;
+
+    const callRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" });
+    const ftsRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FTS" });
+    expect(callRotation?.engineerIds).toContain(engineer.id);
+    expect(ftsRotation?.engineerIds).toContain(engineer.id);
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "ENGINEER_CREATED",
+      entityId: engineer.id,
+      actorId: "manager-create",
+    })).toBe(1);
+
+    setSession("team-lead-create", "Team Lead");
+    const invalidSse = await postEngineer(engineerPostRequest({
+      name: "Invalid SSE",
+      role: "SSE",
+      callQueue: true,
+      ftsQueue: false,
+    }));
+    expect(invalidSse.status).toBe(422);
+    expect(await db.collection<EngineerRecord>("engineers").countDocuments({ name: "Invalid SSE" })).toBe(0);
+
+    setSession("team-lead-create", "Team Lead");
+    const privilegedProfile = await postEngineer(engineerPostRequest({
+      name: "Unauthorized Manager Profile",
+      role: "Manager",
+      callQueue: false,
+      ftsQueue: false,
+    }));
+    expect(privilegedProfile.status).toBe(403);
+    expect(await db.collection<EngineerRecord>("engineers").countDocuments({ name: "Unauthorized Manager Profile" })).toBe(0);
+  });
+
+  it("restricts engineer mutations and updates queue membership with an audit event", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne({
+      ...makeEngineer("engineer-patch"),
+      callQueue: true,
+      ftsQueue: true,
+    });
+    await seedRotation(["engineer-patch", "other-call"], "FE_CRU_EVENT");
+    await seedRotation(["engineer-patch", "other-fts"], "FTS");
+
+    setSession("engineer-patch", "Engineer");
+    const forbidden = await patchEngineer(
+      engineerPatchRequest({ name: "Unauthorized rename" }),
+      { params: Promise.resolve({ id: "engineer-patch" }) },
+    );
+    expect(forbidden.status).toBe(403);
+
+    setSession("team-lead-patch", "Team Lead");
+    const updated = await patchEngineer(
+      engineerPatchRequest({ name: "Updated Engineer", callQueue: false }),
+      { params: Promise.resolve({ id: "engineer-patch" }) },
+    );
+    expect(updated.status).toBe(200);
+
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "engineer-patch" });
+    expect(engineer?.name).toBe("Updated Engineer");
+    expect(engineer?.callQueue).toBe(false);
+    expect(engineer?.ftsQueue).toBe(true);
+
+    const callRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" });
+    const ftsRotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FTS" });
+    expect(callRotation?.engineerIds).not.toContain("engineer-patch");
+    expect(ftsRotation?.engineerIds).toContain("engineer-patch");
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "ENGINEER_UPDATED",
+      entityId: "engineer-patch",
+      actorId: "team-lead-patch",
+    })).toBe(1);
+  });
+
+
+  it("synchronizes roster and login roles and prevents Team Lead privilege escalation", async () => {
+    const engineer = makeEngineer("role-engineer");
+    const managerTarget: EngineerRecord = {
+      ...makeEngineer("role-manager-target"),
+      role: "Manager",
+      callQueue: false,
+      ftsQueue: false,
+    };
+    const managerActor: EngineerRecord = {
+      ...makeEngineer("role-manager-actor"),
+      role: "Manager",
+      callQueue: false,
+      ftsQueue: false,
+    };
+    await db.collection<EngineerRecord>("engineers").insertMany([engineer, managerTarget, managerActor]);
+    await db.collection("users").insertMany([
+      { id: engineer.id, email: "role-engineer@example.test", name: engineer.name, role: "Engineer", active: true, passwordHash: "test-hash", createdAt: now, updatedAt: now },
+      { id: managerTarget.id, email: "role-manager-target@example.test", name: managerTarget.name, role: "Manager", active: true, passwordHash: "test-hash", createdAt: now, updatedAt: now },
+      { id: managerActor.id, email: "role-manager-actor@example.test", name: managerActor.name, role: "Manager", active: true, passwordHash: "test-hash", createdAt: now, updatedAt: now },
+    ]);
+    await seedRotation([engineer.id, "other-call"], "FE_CRU_EVENT");
+    await seedRotation([engineer.id, "other-fts"], "FTS");
+
+    setSession("team-lead-role", "Team Lead");
+    const promotion = await patchEngineer(
+      engineerPatchRequest({ role: "Manager" }),
+      { params: Promise.resolve({ id: engineer.id }) },
+    );
+    expect(promotion.status).toBe(403);
+
+    setSession("team-lead-role", "Team Lead");
+    const managerEdit = await patchEngineer(
+      engineerPatchRequest({ name: "Unauthorized manager rename" }),
+      { params: Promise.resolve({ id: managerTarget.id }) },
+    );
+    expect(managerEdit.status).toBe(403);
+
+    setSession("team-lead-role", "Team Lead");
+    const updated = await patchEngineer(
+      engineerPatchRequest({ name: "Updated SSE", role: "SSE", callQueue: false, ftsQueue: false }),
+      { params: Promise.resolve({ id: engineer.id }) },
+    );
+    expect(updated.status).toBe(200);
+
+    const updatedEngineer = await db.collection<EngineerRecord>("engineers").findOne({ id: engineer.id });
+    const updatedUser = await db.collection("users").findOne({ id: engineer.id });
+    expect(updatedEngineer).toMatchObject({ name: "Updated SSE", role: "SSE", callQueue: false, ftsQueue: false });
+    expect(updatedUser).toMatchObject({ name: "Updated SSE", role: "SSE", active: true });
+    expect((await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" }))?.engineerIds).not.toContain(engineer.id);
+    expect((await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FTS" }))?.engineerIds).not.toContain(engineer.id);
+
+    setSession("role-manager-actor", "Manager");
+    const demoted = await patchEngineer(
+      engineerPatchRequest({ name: "Former Manager", role: "Engineer", active: false }),
+      { params: Promise.resolve({ id: managerTarget.id }) },
+    );
+    expect(demoted.status).toBe(200);
+    expect(await db.collection<EngineerRecord>("engineers").findOne({ id: managerTarget.id })).toMatchObject({
+      name: "Former Manager",
+      role: "Engineer",
+      active: false,
+    });
+    expect(await db.collection("users").findOne({ id: managerTarget.id })).toMatchObject({
+      name: "Former Manager",
+      role: "Engineer",
+      active: false,
+    });
+
+    setSession("role-manager-actor", "Manager");
+    const selfDeactivation = await patchEngineer(
+      engineerPatchRequest({ active: false }),
+      { params: Promise.resolve({ id: managerActor.id }) },
+    );
+    expect(selfDeactivation.status).toBe(409);
+    expect(await db.collection("users").findOne({ id: managerActor.id })).toMatchObject({
+      role: "Manager",
+      active: true,
+    });
+  });
+
+  it("limits SSE roster and record access to self while permitting own assignment updates", async () => {
+    const sse: EngineerRecord = {
+      ...makeEngineer("sse-member"),
+      role: "SSE",
+      callQueue: false,
+      ftsQueue: false,
+    };
+    const other = makeEngineer("other-member");
+    await db.collection<EngineerRecord>("engineers").insertMany([sse, other]);
+    await db.collection("assignments").insertMany([
+      {
+        id: "sse-assignment",
+        requestId: "sse-assignment",
+        rotation: "FE_CRU_EVENT",
+        kind: "FE",
+        caseNumber: "SSE-CASE",
+        scheduledStartAt: startAt,
+        scheduledEndAt: endAt,
+        engineerId: sse.id,
+        status: "Scheduled",
+        createdBy: "manager",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "other-assignment",
+        requestId: "other-assignment",
+        rotation: "FE_CRU_EVENT",
+        kind: "FE",
+        caseNumber: "OTHER-CASE",
+        scheduledStartAt: startAt,
+        scheduledEndAt: endAt,
+        engineerId: other.id,
+        status: "Scheduled",
+        createdBy: "manager",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.collection("leave_requests").insertMany([
+      { id: "sse-leave", engineerId: sse.id, engineerName: sse.name, startDate: "2026-11-10", endDate: "2026-11-10", reason: "SSE leave", status: "Pending", createdAt: now, updatedAt: now },
+      { id: "other-leave", engineerId: other.id, engineerName: other.name, startDate: "2026-11-10", endDate: "2026-11-10", reason: "Other leave", status: "Pending", createdAt: now, updatedAt: now },
+    ]);
+
+    setSession(sse.id, "SSE");
+    const roster = await getEngineers();
+    expect((await roster.json()).engineers.map((item: EngineerRecord) => item.id)).toEqual([sse.id]);
+
+    setSession(sse.id, "SSE");
+    const assignments = await getAssignments();
+    expect((await assignments.json()).assignments.map((item: { id: string }) => item.id)).toEqual(["sse-assignment"]);
+
+    setSession(sse.id, "SSE");
+    const leaves = await getLeaves();
+    expect((await leaves.json()).leaves.map((item: { id: string }) => item.id)).toEqual(["sse-leave"]);
+
+    setSession(sse.id, "SSE");
+    const reports = await getReports(new NextRequest("http://localhost/api/reports"));
+    expect(reports.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const createEngineer = await postEngineer(engineerPostRequest({
+      name: "SSE Cannot Create",
+      role: "Engineer",
+      callQueue: false,
+      ftsQueue: false,
+    }));
+    expect(createEngineer.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const createAssignment = await postAssignment(new NextRequest("http://localhost/api/assignments", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "FE", caseNumber: "SSE-FORBIDDEN", scheduledStartAt: startAt.toISOString() }),
+    }));
+    expect(createAssignment.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const createUser = await postUser(new NextRequest("http://localhost/api/users", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "SSE Cannot Create", email: "sse-cannot-create@example.test", password: "CallFlow-Test-Password-2026!", role: "Manager" }),
+    }));
+    expect(createUser.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const skipRotation = await postRotationSkip(rotationSkipRequest("FTS"));
+    expect(skipRotation.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const patchRoster = await patchEngineer(
+      engineerPatchRequest({ name: "SSE Cannot Rename" }),
+      { params: Promise.resolve({ id: other.id }) },
+    );
+    expect(patchRoster.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const approveOtherLeave = await patchLeave(
+      leavePatchRequest("Approved"),
+      { params: Promise.resolve({ id: "other-leave" }) },
+    );
+    expect(approveOtherLeave.status).toBe(403);
+
+    setSession(sse.id, "SSE");
+    const ownAssignmentUpdate = await patchAssignment(
+      assignmentPatchRequest("sse-assignment", "In Progress"),
+      { params: Promise.resolve({ id: "sse-assignment" }) },
+    );
+    expect(ownAssignmentUpdate.status).toBe(200);
+
+    setSession(sse.id, "SSE");
+    const otherAssignmentUpdate = await patchAssignment(
+      assignmentPatchRequest("other-assignment", "In Progress"),
+      { params: Promise.resolve({ id: "other-assignment" }) },
+    );
+    expect(otherAssignmentUpdate.status).toBe(403);
+  });
+
+  it("enforces check-in and check-out state transitions and audits accepted events", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("attendance-member"));
+
+    setSession("attendance-member", "Engineer");
+    const earlyCheckout = await postAttendance(attendanceRequest({ action: "check-out" }));
+    expect(earlyCheckout.status).toBe(409);
+
+    setSession("attendance-member", "Engineer");
+    const checkIn = await postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" }));
+    expect(checkIn.status).toBe(200);
+
+    setSession("attendance-member", "Engineer");
+    const duplicateCheckIn = await postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" }));
+    expect(duplicateCheckIn.status).toBe(409);
+
+    setSession("attendance-member", "Engineer");
+    const checkOut = await postAttendance(attendanceRequest({ action: "check-out" }));
+    expect(checkOut.status).toBe(200);
+
+    setSession("attendance-member", "Engineer");
+    const duplicateCheckout = await postAttendance(attendanceRequest({ action: "check-out" }));
+    expect(duplicateCheckout.status).toBe(409);
+
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "attendance-member" });
+    expect(engineer?.attendanceStatus).toBe("Not checked in");
+    expect(engineer?.checkedInAt).toBeInstanceOf(Date);
+    expect(engineer?.checkedOutAt).toBeInstanceOf(Date);
+    expect(await db.collection("attendance_events").countDocuments({ engineerId: "attendance-member" })).toBe(2);
+    expect(await db.collection("audit_events").countDocuments({ entityId: "attendance-member" })).toBe(2);
+  });
+
+  it("serializes concurrent office check-ins at the attendance route", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("attendance-race"));
+
+    setSession("attendance-race", "Engineer");
+    setSession("attendance-race", "Engineer");
+    const responses = await Promise.all([
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" })),
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" })),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await db.collection("attendance_events").countDocuments({
+      engineerId: "attendance-race",
+      eventType: "CHECKED_IN",
+    })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({
+      entityId: "attendance-race",
+      eventType: "ATTENDANCE_CHECKED_IN",
+    })).toBe(1);
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "attendance-race" });
+    expect(engineer?.attendanceStatus).toBe("Present");
+    expect(engineer?.attendanceWorkMode).toBe("Office");
+  });
+
+  it("serializes concurrent check-outs so only one request closes the attendance session", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("checkout-race"));
+
+    setSession("checkout-race", "Engineer");
+    const checkIn = await postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" }));
+    expect(checkIn.status).toBe(200);
+
+    setSession("checkout-race", "Engineer");
+    setSession("checkout-race", "Engineer");
+    const responses = await Promise.all([
+      postAttendance(attendanceRequest({ action: "check-out" })),
+      postAttendance(attendanceRequest({ action: "check-out" })),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await db.collection("attendance_events").countDocuments({
+      engineerId: "checkout-race",
+      eventType: { $in: ["CHECKED_IN", "CHECKED_OUT"] },
+    })).toBe(2);
+    expect(await db.collection("audit_events").countDocuments({
+      entityId: "checkout-race",
+      eventType: { $in: ["ATTENDANCE_CHECKED_IN", "ATTENDANCE_CHECKED_OUT"] },
+    })).toBe(2);
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "checkout-race" });
+    expect(engineer?.attendanceStatus).toBe("Not checked in");
+    expect(engineer?.checkedOutAt).toBeInstanceOf(Date);
+  });
+
+  it("commits WFH quota and attendance once under concurrent route check-ins", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("wfh-route-race"));
+
+    setSession("wfh-route-race", "Engineer");
+    setSession("wfh-route-race", "Engineer");
+    const responses = await Promise.all([
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "WFH" })),
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "WFH" })),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await db.collection("attendance_events").countDocuments({
+      engineerId: "wfh-route-race",
+      eventType: "WFH_CHECKED_IN",
+    })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({
+      entityId: "wfh-route-race",
+      eventType: "ATTENDANCE_CHECKED_IN",
+    })).toBe(1);
+    const quota = await db.collection("wfh_quota").findOne({ engineerId: "wfh-route-race" });
+    expect(quota?.reservationVersion).toBe(1);
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "wfh-route-race" });
+    expect(engineer?.attendanceStatus).toBe("Present");
+    expect(engineer?.attendanceWorkMode).toBe("WFH");
   });
 
   it("serializes leave capacity, commits audit events, and releases capacity on cancellation", async () => {

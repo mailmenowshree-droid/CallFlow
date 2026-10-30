@@ -68,6 +68,16 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Run production HTTP end-to-end smoke test
+        run: npm run test:e2e
+      - name: Install Chromium for browser regression
+        run: npx --yes --package=playwright@1.56.1 playwright install --with-deps chromium
+      - name: Run production browser end-to-end regression
+        run: |
+          npx --yes --package=playwright@1.56.1 -c '
+            export NODE_PATH="$(dirname "$(dirname "$(readlink -f "$(command -v playwright)")")")"
+            node scripts/e2e-browser.mjs
+          '
       - name: Stop the ephemeral MongoDB replica set
         if: always()
         run: docker rm --force callflow-mongo || true

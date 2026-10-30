@@ -1,46 +1,68 @@
 # CallFlow
 
-Call assignment and operations dashboard for Team Leads, Managers, and engineers.
+Call assignment and operations workspace for Managers, Team Leads, Engineers, and SSEs.
 
 ## Stack
 
-- Next.js 14 App Router, React 18, TypeScript, Tailwind CSS
-- MongoDB Atlas for users, engineers, assignments, rotations, attendance, leave, and audit records
-- bcryptjs password hashes and signed HS256 session cookies
+- Next.js 16 App Router, React 19, TypeScript, and Tailwind CSS
+- MongoDB Node.js driver for users, engineers, assignments, rotations, attendance, leave, and audit records
+- bcryptjs password hashes and signed HS256 session cookies via jose
+- Vitest unit and MongoDB replica-set integration tests
 
-## Authentication and initial setup
+## Core workflows
 
-1. Configure `MONGODB_URI`, `MONGODB_DB`, and a cryptographically random `SESSION_SECRET` of at least 32 characters.
-2. For the one-time Manager bootstrap, configure `CALLFLOW_BOOTSTRAP_TOKEN` (at least 32 random characters) and `BOOTSTRAP_MANAGER_EMAIL`.
-3. Open `/setup-manager`, enter the configured email, Manager name, bootstrap token, and a password of at least 14 characters.
-4. After the Manager account is created, remove `CALLFLOW_BOOTSTRAP_TOKEN` and `BOOTSTRAP_MANAGER_EMAIL` from the deployed environment and redeploy.
-5. Sign in from the CallFlow home page. A session is stored in an HTTP-only, SameSite=Strict cookie.
+- Manager bootstrap, password login/logout, and database-backed session validation
+- Role-restricted team and user management
+- Separate FE/CRU/Event and FTS round-robin queues
+- Transactional assignment creation, overlap prevention, status lifecycle, and audit events
+- Attendance check-in/check-out with atomic WFH quota reservation
+- Leave requests, approval/rejection/cancellation, and per-day capacity reservations
+- Manager/Team Lead reporting and CSV export; CSV cells are neutralized against spreadsheet formula injection
 
-The development-only fixed Manager identity is enabled only when `NODE_ENV=development`. Deployed Vercel Preview and production environments require a real session; Preview deployments do not receive an implicit Manager identity.
+## Environment variables
 
-Login attempts are throttled using atomic MongoDB counters: 10 attempts per account and 30 per source IP per 15-minute window. Rate-limit identifiers are HMAC-hashed with `SESSION_SECRET`; expired counters are removed by a MongoDB TTL index. No external rate-limiting service is required. Requests without a validated client IP still receive the per-account limit.
+Configure these only in the server-side environment. Never commit real values.
 
-Preview demo seeding is disabled by default. To enable it for QA, set `CALLFLOW_PREVIEW_SEED_ENABLED=true` only in the Vercel Preview environment and use a separate MongoDB database whose name ends in `-preview` or `_preview`. The seed endpoint also requires an authenticated Manager session. Never point a preview deployment at the production database.
+- **MONGODB_URI**: least-privileged MongoDB application connection URI. Transactions require a replica set or sharded cluster.
+- **MONGODB_DB**: optional database name; defaults to callflow.
+- **SESSION_SECRET**: cryptographically random value of at least 32 characters.
+- **CALLFLOW_BOOTSTRAP_TOKEN**: one-time Manager bootstrap token of at least 32 characters.
+- **BOOTSTRAP_MANAGER_EMAIL**: the only email accepted by the one-time bootstrap endpoint.
+- **CALLFLOW_PREVIEW_SEED_ENABLED**: optional Preview-only seed switch; disabled by default.
+
+## Initial Manager setup
+
+1. Configure MONGODB_URI, MONGODB_DB, and SESSION_SECRET.
+2. Temporarily configure CALLFLOW_BOOTSTRAP_TOKEN and BOOTSTRAP_MANAGER_EMAIL.
+3. Open /setup-manager and create the initial Manager using the configured email, bootstrap token, name, and a password of at least 14 characters.
+4. Remove the bootstrap token and email from the deployment environment after the Manager is created.
+5. Sign in from the CallFlow home page.
+
+The bootstrap endpoint is one-time and refuses to create another Manager after one exists. Production and Preview require a real session; the fixed Manager identity is local-development-only. Session cookies are HTTP-only, SameSite=Strict, Secure in production, and expire after eight hours.
+
+Login attempts use MongoDB-backed account/IP throttling. Rate-limit identifiers are HMAC-hashed with SESSION_SECRET; no external rate-limiting service is required.
+
+## Preview seeding
+
+Preview demo seeding is disabled by default. If enabled for QA, use only the Vercel Preview environment, a separate database whose name ends in -preview or _preview, and an authenticated Manager session. Never point a Preview deployment at production data.
 
 ## Local development
 
-```bash
-npm install
-npm run dev
-```
+Run npm ci, then npm run dev.
 
 ## Validation
 
-```bash
-npm run typecheck
-npm test
-npm run build
-```
+Run npm run typecheck, npm run lint, npm test, npm run build, and npm run test:e2e.
 
-GitHub Actions starts an ephemeral MongoDB 7 single-node replica set for integration tests. The replica set is isolated to the GitHub runner and uses the `callflow_ci_test` database; it does not access a deployed database. For local integration testing, set `MONGODB_URI` and `MONGODB_DB` to a disposable replica-set database. Without `MONGODB_URI`, the MongoDB integration suite is skipped while unit tests still run.
+The HTTP end-to-end smoke test requires a disposable MongoDB replica set in MONGODB_URI and a completed production build. It starts the built Next.js server, uses synthetic Manager/Engineer accounts, and selects a separate process-specific database name. Do not run it against a production database.
+
+GitHub Actions starts an ephemeral MongoDB 7 single-node replica set and runs dependency installation, audit reporting, typecheck, lint, unit/integration tests, production build, and the HTTP end-to-end smoke test. The latest verified run is recorded in PROJECT_STATUS.md.
+
+GitHub Actions also runs `scripts/e2e-browser.mjs` against the production build using Chromium and Playwright 1.56.1. It covers Manager bootstrap/login, Engineer and Team Lead provisioning/login, role-specific UI controls, assignment status transitions, the report CSV download, WFH attendance, leave approval/cancellation, and logout. Playwright and Chromium are installed ephemerally on the CI runner and are not application dependencies.
 
 ## Operational boundaries
 
+- Use synthetic data in tests and previews. Never commit credentials, tokens, or real customer/case data.
 - MongoDB transactions require a replica set or sharded cluster.
-- Use only synthetic data in previews and tests. Never commit credentials, tokens, or real customer/case data.
-- Do not treat a successful build or preview deployment as proof of production readiness. Database concurrency, browser workflows, and production configuration must be verified separately.
+- A successful CI run or Preview build is not proof of production readiness.
+- Production configuration and deployment must be verified separately and require explicit approval.
