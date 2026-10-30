@@ -260,7 +260,7 @@ integration("MongoDB replica-set integration", () => {
       createdAt: now,
       updatedAt: now,
     });
-    await db.collection("leave_capacity").insertOne({ _id: day, reservationVersion: 0, createdAt: now });
+    await db.collection<{ _id: string; reservationVersion: number; createdAt: Date }>("leave_capacity").insertOne({ _id: day, reservationVersion: 0, createdAt: now });
 
     setSession("eng-two", "Engineer");
     setSession("eng-three", "Engineer");
