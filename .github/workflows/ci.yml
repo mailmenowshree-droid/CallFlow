@@ -68,6 +68,8 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Run production HTTP end-to-end smoke test
+        run: npm run test:e2e
       - name: Stop the ephemeral MongoDB replica set
         if: always()
         run: docker rm --force callflow-mongo || true
