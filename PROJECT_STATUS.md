@@ -56,9 +56,10 @@ PR #5: https://github.com/mailmenowshree-droid/CallFlow/pull/5 (stacked on PR #4
 ## Remaining verification and blockers
 
 1. Verify a real Vercel Preview login against a dedicated Preview database and configured Manager account. This requires Preview database configuration and Manager test credentials; no Preview credentials or settings were changed.
-2. Production environment configuration and deployment remain unverified. Any deployment requires explicit approval.
-3. The authorization matrix has been reviewed route-by-route, but automated tests do not yet assert every possible role/route pair. Add further pairwise negative tests before treating authorization verification as exhaustive.
-4. End-to-end verification against a deployed Preview environment remains outstanding; current HTTP and Chromium E2E use an isolated local production build and ephemeral MongoDB replica set.
+2. Check whether existing Manager/Team Lead accounts predate linked-profile provisioning. Those accounts are not automatically backfilled; if their `EngineerRecord` rows are missing, a controlled additive backfill requires Preview database access and approval. No existing database was accessed or modified.
+3. Production environment configuration and deployment remain unverified. Any deployment requires explicit approval.
+4. The authorization matrix has been reviewed route-by-route, but automated tests do not yet assert every possible role/route pair. Add further pairwise negative tests before treating authorization verification as exhaustive.
+5. End-to-end verification against a deployed Preview environment remains outstanding; current HTTP and Chromium E2E use an isolated local production build and ephemeral MongoDB replica set.
 
 ## Latest changes in this branch
 
