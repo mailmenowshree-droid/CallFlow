@@ -159,9 +159,9 @@ try {
   let assignmentRow = page.getByRole("row").filter({ hasText: assignmentCase });
   await assignmentRow.waitFor();
   await page.getByLabel(`Update status for ${assignmentCase}`).selectOption("In Progress");
-  await assignmentRow.getByText("In Progress", { exact: true }).waitFor();
+  await assignmentRow.locator(".status-pill").filter({ hasText: "In Progress" }).waitFor();
   await page.getByLabel(`Update status for ${assignmentCase}`).selectOption("Completed");
-  await assignmentRow.getByText("Completed", { exact: true }).waitFor();
+  await assignmentRow.locator(".status-pill").filter({ hasText: "Completed" }).waitFor();
 
   // Team Lead can read reports, but does not receive Manager-only account controls.
   await signOut(page);
@@ -176,8 +176,8 @@ try {
   await signOut(page);
   await signIn(page, { ...manager, role: "Manager" });
   await navigation(page, "Reports").click();
-  await page.getByLabel("From").fill(assignmentDate);
   await page.getByLabel("To").fill(assignmentDate);
+  await page.getByLabel("From").fill(assignmentDate);
   await page.getByText(assignmentCase, { exact: true }).waitFor();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
