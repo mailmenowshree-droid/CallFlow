@@ -44,8 +44,10 @@ const futureDate = (days) => {
 
 const assignmentDate = futureDate(4);
 const leaveDate = futureDate(8);
+const teamLeadLeaveDate = futureDate(9);
 const assignmentCase = "E2E-BROWSER-1001";
 const leaveReason = "Synthetic browser regression leave request";
+const teamLeadLeaveReason = "Synthetic Team Lead browser leave request";
 
 const child = spawn(
   process.execPath,
@@ -132,6 +134,9 @@ try {
   await navigation(page, "Team").click();
   const managerRoleOptions = await page.locator('.add-member select[aria-label="Role"] option').allTextContents();
   assert.deepEqual(managerRoleOptions, ["Engineer", "SSE", "Team Lead", "Manager"], "Manager can assign all roster roles.");
+  const managerProfileRow = page.getByRole("row").filter({ hasText: manager.name });
+  await managerProfileRow.waitFor();
+  assert.deepEqual(await managerProfileRow.getByLabel(`Role for ${manager.name}`).locator("option").allTextContents(), ["Engineer", "SSE", "Team Lead", "Manager"], "The bootstrapped Manager has a linked, editable team profile.");
   const accountPanel = page.locator(".account-panel");
   await accountPanel.getByRole("heading", { name: "Create user access" }).waitFor();
 
@@ -153,21 +158,6 @@ try {
   await accountPanel.getByLabel("Account role").selectOption("Team Lead");
   await accountPanel.getByRole("button", { name: "Create account" }).click();
   await page.getByText(`Account created for ${teamLead.email}.`, { exact: true }).waitFor();
-
-  // Manager also creates a synthetic privileged roster profile to verify Team Lead read-only rendering.
-  const managerProfileName = "Browser CI Manager Profile";
-  const rosterForm = page.locator(".add-member").first();
-  await rosterForm.getByLabel("Team member name").fill(managerProfileName);
-  await rosterForm.getByLabel("Role").selectOption("Manager");
-  await rosterForm.getByRole("button", { name: "Add", exact: true }).click();
-  await page.getByText("Team member added.", { exact: true }).waitFor();
-  const managerProfileRow = page.getByRole("row").filter({ hasText: managerProfileName });
-  await managerProfileRow.waitFor();
-  assert.deepEqual(
-    await managerProfileRow.getByLabel(`Role for ${managerProfileName}`).locator("option").allTextContents(),
-    ["Engineer", "SSE", "Team Lead", "Manager"],
-    "Manager can edit privileged roster profiles.",
-  );
 
   // Manager creates and completes a round-robin assignment in the browser.
   await navigation(page, "Assignments").click();
@@ -199,17 +189,29 @@ try {
     ["Engineer", "SSE"],
     "Team Lead can edit only Engineer/SSE roster roles.",
   );
-  const readOnlyManagerRow = page.getByRole("row").filter({ hasText: managerProfileName });
+  const readOnlyManagerRow = page.getByRole("row").filter({ hasText: manager.name });
   assert.equal(await readOnlyManagerRow.getByText("Manager", { exact: true }).count(), 1, "Team Lead can see the privileged role.");
   assert.equal(await readOnlyManagerRow.getByLabel(`Role for ${managerProfileName}`).count(), 0, "Team Lead cannot edit a Manager role.");
   assert.equal(await readOnlyManagerRow.locator(".queue-checks").count(), 0, "Team Lead cannot edit privileged queue membership.");
   assert.equal(await readOnlyManagerRow.getByRole("button", { name: "Mark absent" }).count(), 0, "Team Lead cannot mutate a privileged profile from the roster.");
+  const ownTeamLeadProfileRow = page.getByRole("row").filter({ hasText: teamLead.name });
+  await ownTeamLeadProfileRow.waitFor();
+  assert.equal(await ownTeamLeadProfileRow.getByLabel(`Role for ${teamLead.name}`).count(), 0, "A Team Lead cannot edit their own privileged roster role.");
+  assert.equal(await ownTeamLeadProfileRow.getByRole("button", { name: "Mark absent" }).count(), 0, "A Team Lead cannot mutate their privileged roster profile.");
   assert.equal(await page.locator(".account-panel").count(), 0, "Team Lead must not see Manager-only account provisioning.");
 
   // Team Lead can read reports, but does not receive Manager-only account controls.
   await navigation(page, "Reports").click();
   await page.getByRole("heading", { name: "Reports" }).waitFor();
   await page.getByText("Assignment outcomes", { exact: true }).waitFor();
+
+  // A provisioned Team Lead has a linked profile and can submit their own leave request.
+  await navigation(page, "Leaves").click();
+  await page.getByLabel("Start date").fill(teamLeadLeaveDate);
+  await page.getByLabel("End date").fill(teamLeadLeaveDate);
+  await page.getByLabel("Reason").fill(teamLeadLeaveReason);
+  await page.getByRole("button", { name: "Submit request" }).click();
+  await page.getByText("Leave request submitted for manager review.", { exact: true }).waitFor();
 
   // Manager report view must expose the saved assignment and a real CSV download.
   await signOut(page);
@@ -255,6 +257,16 @@ try {
   const leaveRow = page.getByRole("row").filter({ hasText: leaveReason });
   await leaveRow.getByRole("button", { name: "Approve", exact: true }).click();
   await leaveRow.getByText("Approved", { exact: true }).waitFor();
+  const teamLeadLeaveRow = page.getByRole("row").filter({ hasText: teamLeadLeaveReason });
+  await teamLeadLeaveRow.getByRole("button", { name: "Approve", exact: true }).click();
+  await teamLeadLeaveRow.getByText("Approved", { exact: true }).waitFor();
+
+  await signOut(page);
+  await signIn(page, { ...teamLead, role: "Team Lead" });
+  await navigation(page, "Leaves").click();
+  const ownTeamLeadLeaveRow = page.getByRole("row").filter({ hasText: teamLeadLeaveReason });
+  await ownTeamLeadLeaveRow.getByRole("button", { name: "Cancel", exact: true }).click();
+  await ownTeamLeadLeaveRow.getByText("Cancelled", { exact: true }).waitFor();
 
   await signOut(page);
   await signIn(page, { ...engineer, role: "Engineer" });
