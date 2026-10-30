@@ -9,13 +9,13 @@ PR #4: https://github.com/mailmenowshree-droid/CallFlow/pull/4 (stacked on PR #3
 
 ## Latest verified CI
 
-- Commit: a9ed2697535433734cbcba7772a31ed0f554bfdf
-- Workflow run #331: https://github.com/mailmenowshree-droid/CallFlow/actions/runs/41076297999
+- Commit: 008b2d0c1eee1e1612e4f0309c8f47004f5cbcb8
+- Workflow run #334: https://github.com/mailmenowshree-droid/CallFlow/actions/runs/41077067456
 - npm ci: passed using the committed lockfile
 - npm audit: 0 vulnerabilities (0 info, low, moderate, high, or critical)
 - TypeScript typecheck: passed
 - ESLint: passed
-- Vitest: 73 tests passed across 15 files
+- Vitest: 75 tests passed across 15 files
 - MongoDB 7 replica-set integration tests: passed
 - Production build: passed
 - Production HTTP API end-to-end smoke test: passed
@@ -30,7 +30,7 @@ PR #4: https://github.com/mailmenowshree-droid/CallFlow/pull/4 (stacked on PR #3
 | Authentication | Manager bootstrap, bcrypt hashes, login/logout, signed HTTP-only sessions, active-user lookup | Unit tests and production HTTP smoke test pass; real Preview login remains unverified |
 | Login rate limiting | Atomic MongoDB account/IP windows, HMAC identifiers, TTL cleanup | Unit and MongoDB integration tests pass |
 | Role authorization | Manager/Team Lead privileged APIs; Engineer self-service boundaries | Session tests and HTTP smoke tests cover unauthenticated access and Engineer restrictions; full route matrix remains outstanding |
-| Engineer/team management | User creation, engineer roster, queue membership and audit records | Manager creation and roster read covered by HTTP smoke test; PATCH mutation matrix needs more integration coverage |
+| Engineer/team management | User creation, engineer roster, queue membership and audit records | HTTP smoke test covers Manager provisioning/roster; MongoDB route tests cover creation, queue membership mutation, and Engineer denial; full role matrix remains outstanding |
 | Round-robin assignment | Transactional FE/CRU/Event and FTS queues, overlap prevention | Concurrent MongoDB assignment tests pass |
 | Assignment lifecycle | Transactional status changes and completion counters | MongoDB race tests and HTTP lifecycle smoke test pass |
 | Attendance | Check-in/check-out state guards; attendance and audit events in one transaction | Route integration tests cover invalid/duplicate transitions and concurrent Office/WFH check-ins and check-outs |
@@ -57,6 +57,7 @@ PR #4: https://github.com/mailmenowshree-droid/CallFlow/pull/4 (stacked on PR #3
 
 ## Latest changes in this branch
 
+- Added MongoDB route tests for engineer creation, atomic FE/FTS queue membership, invalid SSE queue access, Engineer mutation denial, and Team Lead queue updates. The session mock now enforces allowed roles rather than bypassing the production role guard.
 - Enforced attendance state transitions: duplicate check-in and check-out without an active check-in return HTTP 409. The conditional MongoDB update is in the same transaction as attendance and audit events.
 - Added MongoDB route tests for invalid transitions, duplicate check-in, concurrent Office check-ins, concurrent WFH check-ins, and concurrent check-outs.
 - Added a production HTTP smoke test covering Manager bootstrap/login, Engineer provisioning/login, role restrictions, assignment lifecycle, WFH attendance, leave approval/cancellation, reporting, and logout.
