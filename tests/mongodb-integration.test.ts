@@ -242,7 +242,7 @@ integration("MongoDB replica-set integration", () => {
     expect(skippedIds).toEqual(new Set(["skip-a", "skip-b"]));
 
     const skippedEngineers = await db.collection<EngineerRecord>("engineers")
-      .find({ id: { $in: [...skippedIds] } }).toArray();
+      .find({ id: { $in: Array.from(skippedIds) } }).toArray();
     expect(skippedEngineers).toHaveLength(2);
     for (const engineer of skippedEngineers) {
       expect(engineer.skipUntilCompletionByRotation?.FE_CRU_EVENT).toBe(3);
