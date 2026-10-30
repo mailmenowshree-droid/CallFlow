@@ -46,6 +46,7 @@ Additional constraints:
 - Attendance changes by Engineer/SSE are self-scoped. Team Leads/Managers may record attendance for a selected active team profile. WFH quota reservation, attendance state, attendance event, and audit event are transactional.
 - Leave review is limited to Manager/Team Lead and pending requests belonging to another person. Self-approval and self-rejection are forbidden for both Manager and Team Lead. Only the owner can cancel their own request, except a Manager can cancel any pending/approved request.
 - Initial Manager bootstrap and Manager account provisioning create an `EngineerRecord` with the same id/email as the login for every role. This allows Manager and Team Lead accounts to use their own attendance and leave flows; only Engineer profiles can join automatic rotations.
+- Accounts created before this linked-profile behavior are not automatically backfilled. Existing Manager/Team Lead records must be checked in the target database; if profiles are missing, perform an approved additive backfill. No existing database was accessed or modified.
 - Temporary rotation leave exclusion is Manager/Team Lead only; the roster update and audit event now commit in one MongoDB transaction.
 - Engineer roster role/name/active changes synchronize to the matching login account in one transaction. Concurrent demotion/deactivation is serialized so at least one active Manager remains.
 
@@ -60,4 +61,5 @@ Additional constraints:
 
 - This is a reviewed route matrix, not exhaustive automated coverage of every role/route pair. Critical allow/deny boundaries are tested; additional pairwise negative tests may still be warranted before production.
 - Real Vercel Preview login has not been verified. It requires a dedicated Preview MongoDB database and a configured Manager test account/credentials.
+- Existing Manager/Team Lead accounts created before linked-profile provisioning may lack matching `EngineerRecord` rows. Verify the Preview database and approve an additive profile backfill if needed before testing their leave/attendance flows.
 - Production environment configuration and production deployment have not been verified or performed. Deployment requires explicit approval.
