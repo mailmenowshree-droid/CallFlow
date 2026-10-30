@@ -6,11 +6,17 @@ const base = {
   actorId: "engineer-1",
   engineerId: "engineer-1",
 };
+const reviewerBase = { ...base, actorId: "reviewer-1" };
 
 describe("validateLeaveTransition", () => {
   it("allows a team lead or manager to review pending leave", () => {
-    expect(validateLeaveTransition({ ...base, nextStatus: "Approved", actorRole: "Team Lead" })).toBeNull();
-    expect(validateLeaveTransition({ ...base, nextStatus: "Rejected", actorRole: "Manager" })).toBeNull();
+    expect(validateLeaveTransition({ ...reviewerBase, nextStatus: "Approved", actorRole: "Team Lead" })).toBeNull();
+    expect(validateLeaveTransition({ ...reviewerBase, nextStatus: "Rejected", actorRole: "Manager" })).toBeNull();
+  });
+
+  it("prevents Managers and Team Leads from approving or rejecting their own leave", () => {
+    expect(validateLeaveTransition({ ...base, nextStatus: "Approved", actorRole: "Team Lead" })).toBe("FORBIDDEN");
+    expect(validateLeaveTransition({ ...base, nextStatus: "Rejected", actorRole: "Manager" })).toBe("FORBIDDEN");
   });
 
   it("allows a user to cancel their own pending or approved leave", () => {
