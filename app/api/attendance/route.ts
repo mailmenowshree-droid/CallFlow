@@ -54,18 +54,35 @@ export async function POST(request: NextRequest) {
           }
           wfhResponse = { usedThisQuarter: reservation.usedThisQuarter, allowanceAvailableToDate: reservation.allowanceAvailableToDate, remaining: reservation.remaining };
         }
-        const update = await db.collection<EngineerRecord>("engineers").updateOne(
-          { id: engineerId, active: true },
-          { $set: {
-            attendanceStatus: checkIn ? "Present" : "Not checked in",
-            ...(checkIn ? { attendanceWorkMode: workMode } : {}),
-            absent: false,
-            ...(checkIn ? { checkedInAt: now } : { checkedOutAt: now }),
-            updatedAt: now,
-          } },
+        const engineers = db.collection<EngineerRecord>("engineers");
+        const currentEngineer = await engineers.findOne({ id: engineerId, active: true }, { session });
+        if (!currentEngineer) throw new Error("ACTIVE_TEAM_MEMBER_NOT_FOUND");
+        if (checkIn && currentEngineer.attendanceStatus === "Present") {
+          throw new Error("ATTENDANCE_ALREADY_CHECKED_IN");
+        }
+        if (!checkIn && currentEngineer.attendanceStatus !== "Present") {
+          throw new Error("ATTENDANCE_NOT_CHECKED_IN");
+        }
+        const update = await engineers.updateOne(
+          {
+            id: engineerId,
+            active: true,
+            attendanceStatus: checkIn ? { $ne: "Present" } : "Present",
+          },
+          {
+            $set: {
+              attendanceStatus: checkIn ? "Present" : "Not checked in",
+              ...(checkIn ? { attendanceWorkMode: workMode, checkedInAt: now } : { checkedOutAt: now }),
+              absent: false,
+              updatedAt: now,
+            },
+            ...(checkIn ? { $unset: { checkedOutAt: "" } } : {}),
+          },
           { session },
         );
-        if (update.matchedCount !== 1) throw new Error("ACTIVE_TEAM_MEMBER_NOT_FOUND");
+        if (update.matchedCount !== 1) {
+          throw new Error(checkIn ? "ATTENDANCE_ALREADY_CHECKED_IN" : "ATTENDANCE_NOT_CHECKED_IN");
+        }
         await db.collection("attendance_events").insertOne({
           id: crypto.randomUUID(),
           engineerId,
@@ -96,6 +113,12 @@ export async function POST(request: NextRequest) {
       }
       if (error instanceof Error && error.message === "ACTIVE_TEAM_MEMBER_NOT_FOUND") {
         return NextResponse.json({ error: "Active team member not found." }, { status: 404, headers: noStore });
+      }
+      if (error instanceof Error && error.message === "ATTENDANCE_ALREADY_CHECKED_IN") {
+        return NextResponse.json({ error: "Attendance is already checked in." }, { status: 409, headers: noStore });
+      }
+      if (error instanceof Error && error.message === "ATTENDANCE_NOT_CHECKED_IN") {
+        return NextResponse.json({ error: "Check in before checking out." }, { status: 409, headers: noStore });
       }
       throw error;
     } finally {
