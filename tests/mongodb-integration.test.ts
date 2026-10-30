@@ -492,18 +492,19 @@ integration("MongoDB replica-set integration", () => {
 
     setSession("role-manager-actor", "Manager");
     const demoted = await patchEngineer(
-      engineerPatchRequest({ name: "Former Manager", role: "Engineer" }),
+      engineerPatchRequest({ name: "Former Manager", role: "Engineer", active: false }),
       { params: Promise.resolve({ id: managerTarget.id }) },
     );
     expect(demoted.status).toBe(200);
     expect(await db.collection<EngineerRecord>("engineers").findOne({ id: managerTarget.id })).toMatchObject({
       name: "Former Manager",
       role: "Engineer",
+      active: false,
     });
     expect(await db.collection("users").findOne({ id: managerTarget.id })).toMatchObject({
       name: "Former Manager",
       role: "Engineer",
-      active: true,
+      active: false,
     });
 
     setSession("role-manager-actor", "Manager");
