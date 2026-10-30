@@ -51,13 +51,13 @@ export async function POST(request: NextRequest) {
             { upsert: true, session },
           );
         }
-        const existing = await db.collection("leave_requests").find({
+        const existing = await db.collection<{ startDate: string; endDate: string }>("leave_requests").find({
           status: { $in: ["Pending", "Approved"] },
           startDate: { $lte: body.endDate },
           endDate: { $gte: body.startDate },
         }, { session }).toArray();
         for (const day of dates) {
-          const count = existing.filter((item: any) => item.startDate <= day && item.endDate >= day).length;
+          const count = existing.filter((item) => item.startDate <= day && item.endDate >= day).length;
           if (count >= 2) throw new Error("LEAVE_FULL:" + day);
         }
         await db.collection("leave_requests").insertOne(leave, { session });

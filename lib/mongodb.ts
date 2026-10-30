@@ -4,7 +4,6 @@ const uri = process.env.MONGODB_URI;
 const databaseName = process.env.MONGODB_DB ?? "callflow";
 
 declare global {
-  // eslint-disable-next-line no-var
   var callFlowMongoClientPromise: Promise<MongoClient> | undefined;
 }
 

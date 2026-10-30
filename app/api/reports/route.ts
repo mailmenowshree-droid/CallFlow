@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     const [assignments, engineers, leaves] = await Promise.all([
       db.collection<AssignmentRecord>("assignments").find({ scheduledStartAt: { $gte: startAt, $lt: endAt } }).sort({ scheduledStartAt: 1 }).toArray(),
       db.collection<EngineerRecord>("engineers").find({ active: true }).toArray(),
-      db.collection("leave_requests").find({ status: "Approved", startDate: { $lte: end }, endDate: { $gte: start } }).toArray(),
+      db.collection<{ startDate: string; endDate: string }>("leave_requests").find({ status: "Approved", startDate: { $lte: end }, endDate: { $gte: start } }).toArray(),
     ]);
     const byId = new Map(engineers.map(engineer => [engineer.id, engineer]));
     const counts = { total: assignments.length, completed: 0, scheduled: 0, inProgress: 0, needsAttention: 0, cancelled: 0, lateOrMissed: 0 };
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     });
     const days = Math.max(1, Math.round((new Date(end + "T12:00:00Z").getTime() - new Date(start + "T12:00:00Z").getTime()) / 86400000) + 1);
     const teamCapacity = engineers.length * days;
-    const leavePersonDays = leaves.reduce((sum: number, leave: any) => {
+    const leavePersonDays = leaves.reduce((sum, leave) => {
       const from = leave.startDate < start ? start : leave.startDate;
       const to = leave.endDate > end ? end : leave.endDate;
       return sum + Math.max(0, Math.round((new Date(to + "T12:00:00Z").getTime() - new Date(from + "T12:00:00Z").getTime()) / 86400000) + 1);
