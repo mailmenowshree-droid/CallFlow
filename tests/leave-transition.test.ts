@@ -44,11 +44,11 @@ describe("validateLeaveTransition", () => {
   });
 
   it("prevents re-reviewing approved or closed leave and cancelling rejected leave", () => {
-    expect(validateLeaveTransition({ ...base, currentStatus: "Approved", nextStatus: "Rejected", actorRole: "Manager" }))
+    expect(validateLeaveTransition({ ...reviewerBase, currentStatus: "Approved", nextStatus: "Rejected", actorRole: "Manager" }))
       .toBe("ALREADY_REVIEWED");
-    expect(validateLeaveTransition({ ...base, currentStatus: "Rejected", nextStatus: "Cancelled", actorRole: "Manager" }))
+    expect(validateLeaveTransition({ ...reviewerBase, currentStatus: "Rejected", nextStatus: "Cancelled", actorRole: "Manager" }))
       .toBe("CLOSED");
-    expect(validateLeaveTransition({ ...base, currentStatus: "Cancelled", nextStatus: "Approved", actorRole: "Manager" }))
+    expect(validateLeaveTransition({ ...reviewerBase, currentStatus: "Cancelled", nextStatus: "Approved", actorRole: "Manager" }))
       .toBe("ALREADY_REVIEWED");
   });
 });
