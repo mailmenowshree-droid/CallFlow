@@ -11,6 +11,7 @@ import type { EngineerRecord, RotationRecord } from "@/lib/callflow-types";
 import { POST as postLeave } from "../app/api/leaves/route";
 import { PATCH as patchLeave } from "../app/api/leaves/[id]/route";
 import { POST as postRotationSkip } from "../app/api/rotations/skip/route";
+import { POST as postAttendance } from "../app/api/attendance/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -116,6 +117,15 @@ integration("MongoDB replica-set integration", () => {
     return result;
   }
 
+
+  const attendanceRequest = (body: { action: "check-in" | "check-out"; workMode?: "Office" | "WFH"; engineerId?: string }) => new NextRequest(
+    "http://localhost/api/attendance",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 
   const rotationSkipRequest = (rotation: "FE_CRU_EVENT" | "FTS") => new NextRequest(
     "http://localhost/api/rotations/skip",
@@ -303,6 +313,87 @@ integration("MongoDB replica-set integration", () => {
     expect([first.ok, second.ok, third.ok]).toEqual([true, true, false]);
     if (!third.ok) expect(third.reason).toBe("limit");
     expect(await db.collection("attendance_events").countDocuments({ eventType: "WFH_CHECKED_IN" })).toBe(2);
+  });
+
+  it("enforces check-in and check-out state transitions and audits accepted events", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("attendance-member"));
+
+    setSession("attendance-member", "Engineer");
+    const earlyCheckout = await postAttendance(attendanceRequest({ action: "check-out" }));
+    expect(earlyCheckout.status).toBe(409);
+
+    setSession("attendance-member", "Engineer");
+    const checkIn = await postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" }));
+    expect(checkIn.status).toBe(200);
+
+    setSession("attendance-member", "Engineer");
+    const duplicateCheckIn = await postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" }));
+    expect(duplicateCheckIn.status).toBe(409);
+
+    setSession("attendance-member", "Engineer");
+    const checkOut = await postAttendance(attendanceRequest({ action: "check-out" }));
+    expect(checkOut.status).toBe(200);
+
+    setSession("attendance-member", "Engineer");
+    const duplicateCheckout = await postAttendance(attendanceRequest({ action: "check-out" }));
+    expect(duplicateCheckout.status).toBe(409);
+
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "attendance-member" });
+    expect(engineer?.attendanceStatus).toBe("Not checked in");
+    expect(engineer?.checkedInAt).toBeInstanceOf(Date);
+    expect(engineer?.checkedOutAt).toBeInstanceOf(Date);
+    expect(await db.collection("attendance_events").countDocuments({ engineerId: "attendance-member" })).toBe(2);
+    expect(await db.collection("audit_events").countDocuments({ entityId: "attendance-member" })).toBe(2);
+  });
+
+  it("serializes concurrent office check-ins at the attendance route", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("attendance-race"));
+
+    setSession("attendance-race", "Engineer");
+    setSession("attendance-race", "Engineer");
+    const responses = await Promise.all([
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" })),
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" })),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await db.collection("attendance_events").countDocuments({
+      engineerId: "attendance-race",
+      eventType: "CHECKED_IN",
+    })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({
+      entityId: "attendance-race",
+      eventType: "ATTENDANCE_CHECKED_IN",
+    })).toBe(1);
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "attendance-race" });
+    expect(engineer?.attendanceStatus).toBe("Present");
+    expect(engineer?.attendanceWorkMode).toBe("Office");
+  });
+
+  it("commits WFH quota and attendance once under concurrent route check-ins", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("wfh-route-race"));
+
+    setSession("wfh-route-race", "Engineer");
+    setSession("wfh-route-race", "Engineer");
+    const responses = await Promise.all([
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "WFH" })),
+      postAttendance(attendanceRequest({ action: "check-in", workMode: "WFH" })),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await db.collection("attendance_events").countDocuments({
+      engineerId: "wfh-route-race",
+      eventType: "WFH_CHECKED_IN",
+    })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({
+      entityId: "wfh-route-race",
+      eventType: "ATTENDANCE_CHECKED_IN",
+    })).toBe(1);
+    const quota = await db.collection("wfh_quota").findOne({ engineerId: "wfh-route-race" });
+    expect(quota?.reservationVersion).toBe(1);
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "wfh-route-race" });
+    expect(engineer?.attendanceStatus).toBe("Present");
+    expect(engineer?.attendanceWorkMode).toBe("WFH");
   });
 
   it("serializes leave capacity, commits audit events, and releases capacity on cancellation", async () => {
