@@ -35,7 +35,14 @@ jobs:
           echo "MongoDB replica set did not become writable."
           docker logs callflow-mongo
           exit 1
-      - run: npm install
+      - run: npm install --no-audit --no-fund
+      - name: Upload generated npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: callflow-package-lock
+          path: package-lock.json
+          retention-days: 1
+          if-no-files-found: error
       - name: Report dependency audit findings
         run: |
           npm audit --json > /tmp/callflow-npm-audit.json 2> /tmp/callflow-npm-audit.stderr || true
