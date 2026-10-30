@@ -212,6 +212,10 @@ try {
   await page.getByLabel("Reason").fill(teamLeadLeaveReason);
   await page.getByRole("button", { name: "Submit request" }).click();
   await page.getByText("Leave request submitted for manager review.", { exact: true }).waitFor();
+  const pendingOwnTeamLeadLeaveRow = page.getByRole("row").filter({ hasText: teamLeadLeaveReason });
+  assert.equal(await pendingOwnTeamLeadLeaveRow.getByRole("button", { name: "Approve", exact: true }).count(), 0, "Team Lead cannot approve their own pending leave.");
+  assert.equal(await pendingOwnTeamLeadLeaveRow.getByRole("button", { name: "Reject", exact: true }).count(), 0, "Team Lead cannot reject their own pending leave.");
+  assert.equal(await pendingOwnTeamLeadLeaveRow.getByRole("button", { name: "Cancel", exact: true }).count(), 1, "Team Lead can cancel their own pending leave.");
 
   // Manager report view must expose the saved assignment and a real CSV download.
   await signOut(page);
