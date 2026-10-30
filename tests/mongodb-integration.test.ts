@@ -1106,7 +1106,8 @@ integration("MongoDB replica-set integration", () => {
     }
 
     try {
-      for (const [index, item] of cases.entries()) {
+      for (let index = 0; index < cases.length; index += 1) {
+        const item = cases[index];
         setSession("authorization-matrix-" + index, item.role);
         const response = await item.run();
         expect(response.status, item.name).toBe(403);
