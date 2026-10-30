@@ -48,7 +48,11 @@ integration("MongoDB replica-set integration", () => {
   });
 
   const setSession = (id: string, role: SessionUser["role"]) => {
-    vi.mocked(requireSession).mockResolvedValueOnce(makeSession(id, role));
+    const session = makeSession(id, role);
+    vi.mocked(requireSession).mockImplementationOnce(async (allowedRoles) => {
+      if (allowedRoles && !allowedRoles.includes(role)) throw new Error("FORBIDDEN");
+      return session;
+    });
   };
 
   async function resetDatabase() {
