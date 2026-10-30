@@ -370,6 +370,34 @@ integration("MongoDB replica-set integration", () => {
     expect(engineer?.attendanceWorkMode).toBe("Office");
   });
 
+  it("serializes concurrent check-outs so only one request closes the attendance session", async () => {
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("checkout-race"));
+
+    setSession("checkout-race", "Engineer");
+    const checkIn = await postAttendance(attendanceRequest({ action: "check-in", workMode: "Office" }));
+    expect(checkIn.status).toBe(200);
+
+    setSession("checkout-race", "Engineer");
+    setSession("checkout-race", "Engineer");
+    const responses = await Promise.all([
+      postAttendance(attendanceRequest({ action: "check-out" })),
+      postAttendance(attendanceRequest({ action: "check-out" })),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(await db.collection("attendance_events").countDocuments({
+      engineerId: "checkout-race",
+      eventType: { $in: ["CHECKED_IN", "CHECKED_OUT"] },
+    })).toBe(2);
+    expect(await db.collection("audit_events").countDocuments({
+      entityId: "checkout-race",
+      eventType: { $in: ["ATTENDANCE_CHECKED_IN", "ATTENDANCE_CHECKED_OUT"] },
+    })).toBe(2);
+    const engineer = await db.collection<EngineerRecord>("engineers").findOne({ id: "checkout-race" });
+    expect(engineer?.attendanceStatus).toBe("Not checked in");
+    expect(engineer?.checkedOutAt).toBeInstanceOf(Date);
+  });
+
   it("commits WFH quota and attendance once under concurrent route check-ins", async () => {
     await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer("wfh-route-race"));
 
