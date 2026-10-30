@@ -68,7 +68,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (removingActiveManager) {
           // Serialize Manager demotions/deactivations so concurrent reviews cannot
           // each observe the same final Manager and both remove it.
-          await db.collection("role_policy_locks").updateOne(
+          await db.collection<{ _id: string; version?: number; createdAt?: Date }>("role_policy_locks").updateOne(
             { _id: "active-manager-accounts" },
             { $inc: { version: 1 }, $setOnInsert: { createdAt: now } },
             { upsert: true, session },
