@@ -130,6 +130,8 @@ try {
   // Manager login and account provisioning through the UI.
   await signIn(page, { ...manager, role: "Manager" });
   await navigation(page, "Team").click();
+  const managerRoleOptions = await page.locator('.add-member select[aria-label="Role"] option').allTextContents();
+  assert.deepEqual(managerRoleOptions, ["Engineer", "SSE", "Team Lead", "Manager"], "Manager can assign all roster roles.");
   const accountPanel = page.locator(".account-panel");
   await accountPanel.getByRole("heading", { name: "Create user access" }).waitFor();
 
@@ -139,6 +141,11 @@ try {
   await accountPanel.getByLabel("Account role").selectOption("Engineer");
   await accountPanel.getByRole("button", { name: "Create account" }).click();
   await page.getByText(`Account created for ${engineer.email}.`, { exact: true }).waitFor();
+  assert.deepEqual(
+    await page.getByLabel(`Role for ${engineer.name}`).locator("option").allTextContents(),
+    ["Engineer", "SSE", "Team Lead", "Manager"],
+    "Manager can edit every roster role.",
+  );
 
   await accountPanel.getByLabel("Account full name").fill(teamLead.name);
   await accountPanel.getByLabel("Work email").fill(teamLead.email);
@@ -163,14 +170,26 @@ try {
   await page.getByLabel(`Update status for ${assignmentCase}`).selectOption("Completed");
   await assignmentRow.locator(".status-pill").filter({ hasText: "Completed" }).waitFor();
 
-  // Team Lead can read reports, but does not receive Manager-only account controls.
+  // Team Lead role controls expose only Engineer/SSE and reset any prior Manager-only selection.
+  await navigation(page, "Team").click();
+  await page.locator('.add-member select[aria-label="Role"]').selectOption("Manager");
   await signOut(page);
   await signIn(page, { ...teamLead, role: "Team Lead" });
+  await navigation(page, "Team").click();
+  const teamLeadRoleSelect = page.locator('.add-member select[aria-label="Role"]');
+  assert.equal(await teamLeadRoleSelect.inputValue(), "Engineer", "A role selected by a prior Manager session must not carry into a Team Lead session.");
+  assert.deepEqual(await teamLeadRoleSelect.locator("option").allTextContents(), ["Engineer", "SSE"], "Team Lead can create only Engineer/SSE profiles.");
+  assert.deepEqual(
+    await page.getByLabel(`Role for ${engineer.name}`).locator("option").allTextContents(),
+    ["Engineer", "SSE"],
+    "Team Lead can edit only Engineer/SSE roster roles.",
+  );
+  assert.equal(await page.locator(".account-panel").count(), 0, "Team Lead must not see Manager-only account provisioning.");
+
+  // Team Lead can read reports, but does not receive Manager-only account controls.
   await navigation(page, "Reports").click();
   await page.getByRole("heading", { name: "Reports" }).waitFor();
   await page.getByText("Assignment outcomes", { exact: true }).waitFor();
-  await navigation(page, "Team").click();
-  assert.equal(await page.locator(".account-panel").count(), 0, "Team Lead must not see Manager-only account provisioning.");
 
   // Manager report view must expose the saved assignment and a real CSV download.
   await signOut(page);
