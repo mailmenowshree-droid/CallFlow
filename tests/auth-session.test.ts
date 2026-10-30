@@ -33,7 +33,6 @@ function installCookie(token: string | null) {
 }
 
 beforeEach(() => {
-  process.env.NODE_ENV = "test";
   process.env.SESSION_SECRET = secret;
   cookieToken = null;
   mocks.cookies.mockReset();
