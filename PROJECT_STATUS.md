@@ -11,7 +11,8 @@ Baseline: `feature/mongodb-foundation`
 |---|---|---|
 | Dashboard and assignment UI | Yes | Browser end-to-end workflows not yet verified |
 | MongoDB persistence | Yes | Requires configured replica-set deployment for transaction tests |
-| Authentication | Manager bootstrap, bcrypt password hashes, JWT session cookie, login/logout endpoints, and session lookup | CI pending; real deployed login flow not yet verified |
+| Authentication | Manager bootstrap, bcrypt password hashes, JWT session cookie, login/logout endpoints, and session lookup | CI must pass on the latest PR head; real deployed login flow not yet verified |
+| Login rate limiting | MongoDB-backed atomic account/IP windows with HMAC identifiers and TTL cleanup | Unit and CI checks required; live MongoDB behavior not yet verified |
 | Preview access control | Deployed previews require a real session; fixed Manager identity is local-development-only | Must verify Vercel Preview environment and configured secrets |
 | Role authorization | API routes enforce role checks for privileged operations | Route-level authorization tests remain incomplete |
 | Engineer/team management | API and dashboard flows present | Database integration and role-matrix tests remain incomplete |
@@ -26,13 +27,13 @@ Baseline: `feature/mongodb-foundation`
 
 - Do not commit secrets, real customer records, or production case data.
 - The repository currently has no committed npm lockfile. Dependency resolution is therefore not reproducible across installs.
-- A prior install reported 15 dependency vulnerabilities (5 moderate, 7 high, 3 critical). The exact dependency tree and advisory set have not yet been reproduced; do not apply broad or major-version upgrades without a fresh audit and compatibility checks.
+- A prior install reported 8 dependency vulnerabilities (3 moderate, 2 high, 3 critical). The exact dependency tree and advisory set have not yet been reproduced; do not apply broad or major-version upgrades without a fresh audit and compatibility checks.
 - MongoDB transaction features require a replica set or sharded cluster.
 - Preview seeding requires an authenticated Manager, an explicit enable flag, and a separate database name ending in `-preview` or `_preview`; it is disabled by default.
 
 ## Next work
 
-1. Verify the current PR head's typecheck, unit tests, and production build.
+1. Verify the current PR head's typecheck, unit tests, and production build after the login-throttling change.
 2. Add route-level tests for authentication, role authorization, and session expiry.
 3. Add MongoDB integration tests for concurrent assignment, leave-capacity, attendance, and WFH quota operations when a free test replica set is available.
 4. Add browser end-to-end coverage for sign-in, role-specific screens, assignment lifecycle, leave, attendance, and report export.
@@ -40,9 +41,6 @@ Baseline: `feature/mongodb-foundation`
 
 ## Latest change
 
-- Removed the implicit Manager session from deployed Vercel Preview environments.
-- Added email/password login and logout endpoints and a sign-in screen.
-- Kept the fixed Manager identity limited to local development.
-- Updated the one-time Manager setup screen to collect the configured email and name and enforce the 14-character password policy.
-- Changed bootstrap bearer-token comparison to a constant-time comparison.
-- Automated checks and deployed login behavior remain unverified until the current PR checks complete.
+- Added database-backed login throttling with atomic fixed-window counters, account and validated source-IP limits, HMAC-hashed identifiers, and TTL cleanup.
+- Kept the implementation on the existing CallFlow working branch and added unit coverage for key derivation, IP parsing, and rate-limit behavior.
+- CI and live MongoDB behavior must be verified before treating this change as complete.

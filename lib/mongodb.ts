@@ -38,14 +38,18 @@ export async function ensureCallFlowIndexes(): Promise<void> {
   indexesPromise ??= (async () => {
     const db = await getDatabase();
     await Promise.all([
-    db.collection("engineers").createIndex({ email: 1 }, { unique: true, sparse: true }),
-    db.collection("users").createIndex({ email: 1 }, { unique: true }),
-    db.collection("assignments").createIndex({ requestId: 1 }, { unique: true, sparse: true }),
-    db.collection("assignments").createIndex({ rotation: 1, status: 1, scheduledStartAt: 1 }),
-    db.collection("rotation_state").createIndex({ _id: 1 }, { unique: true }),
-    db.collection("audit_events").createIndex({ occurredAt: -1 }),
-    db.collection("wfh_quota").createIndex({ engineerId: 1, quarterStart: 1 }, { unique: true }),
-    db.collection("attendance_events").createIndex({ engineerId: 1, attendanceDate: 1, eventType: 1 }, { unique: true, partialFilterExpression: { eventType: "WFH_CHECKED_IN" } }),
+      db.collection("engineers").createIndex({ email: 1 }, { unique: true, sparse: true }),
+      db.collection("users").createIndex({ email: 1 }, { unique: true }),
+      db.collection("assignments").createIndex({ requestId: 1 }, { unique: true, sparse: true }),
+      db.collection("assignments").createIndex({ rotation: 1, status: 1, scheduledStartAt: 1 }),
+      db.collection("rotation_state").createIndex({ _id: 1 }, { unique: true }),
+      db.collection("audit_events").createIndex({ occurredAt: -1 }),
+      db.collection("wfh_quota").createIndex({ engineerId: 1, quarterStart: 1 }, { unique: true }),
+      db.collection("attendance_events").createIndex(
+        { engineerId: 1, attendanceDate: 1, eventType: 1 },
+        { unique: true, partialFilterExpression: { eventType: "WFH_CHECKED_IN" } },
+      ),
+      db.collection("login_rate_limits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     ]);
   })();
   try {

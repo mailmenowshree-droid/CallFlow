@@ -18,6 +18,8 @@ Call assignment and operations dashboard for Team Leads, Managers, and engineers
 
 The development-only fixed Manager identity is enabled only when `NODE_ENV=development`. Deployed Vercel Preview and production environments require a real session; Preview deployments do not receive an implicit Manager identity.
 
+Login attempts are throttled using atomic MongoDB counters: 10 attempts per account and 30 per source IP per 15-minute window. Rate-limit identifiers are HMAC-hashed with `SESSION_SECRET`; expired counters are removed by a MongoDB TTL index. No external rate-limiting service is required. Requests without a validated client IP still receive the per-account limit.
+
 Preview demo seeding is disabled by default. To enable it for QA, set `CALLFLOW_PREVIEW_SEED_ENABLED=true` only in the Vercel Preview environment and use a separate MongoDB database whose name ends in `-preview` or `_preview`. The seed endpoint also requires an authenticated Manager session. Never point a preview deployment at the production database.
 
 ## Local development
