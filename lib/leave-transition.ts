@@ -19,6 +19,7 @@ export function validateLeaveTransition(input: {
   }
 
   if (actorRole !== "Manager" && actorRole !== "Team Lead") return "FORBIDDEN";
+  if (actorId === engineerId) return "FORBIDDEN";
   if (currentStatus !== "Pending") return "ALREADY_REVIEWED";
   return null;
 }
