@@ -26,7 +26,7 @@ integration("MongoDB login rate-limit integration", () => {
 
   afterAll(async () => {
     if (db && cleanupKeys.length > 0) {
-      await db.collection("login_rate_limits").deleteMany({
+      await db.collection<LoginRateLimitRecord>("login_rate_limits").deleteMany({
         _id: { $in: cleanupKeys },
       });
     }
