@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
+import { getDateKeysInRange, isValidDateKey } from "@/lib/date-key";
 import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
 
 export const runtime = "nodejs";
@@ -24,17 +25,15 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireSession(["Engineer", "SSE", "Team Lead", "Manager"]);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || typeof body.startDate !== "string" || typeof body.endDate !== "string" || typeof body.reason !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate) || body.endDate < body.startDate || !body.reason.trim()) {
+    if (!body || typeof body.startDate !== "string" || typeof body.endDate !== "string" || typeof body.reason !== "string" ||
+        !isValidDateKey(body.startDate) || !isValidDateKey(body.endDate) || body.endDate < body.startDate || !body.reason.trim()) {
       return NextResponse.json({ error: "Choose a valid date range and enter a reason." }, { status: 400, headers });
     }
-    const startDate = body.startDate as string;
-    const endDate = body.endDate as string;
-    const reason = body.reason as string;
-    const dates: string[] = [];
-    const cursor = new Date(startDate + "T12:00:00Z");
-    const end = new Date(endDate + "T12:00:00Z");
-    while (cursor <= end && dates.length <= 31) { dates.push(cursor.toISOString().slice(0, 10)); cursor.setUTCDate(cursor.getUTCDate() + 1); }
-    if (!dates.length || dates.length > 31) return NextResponse.json({ error: "A leave request can cover at most 31 days." }, { status: 400, headers });
+    const startDate = body.startDate;
+    const endDate = body.endDate;
+    const reason = body.reason;
+    const dates = getDateKeysInRange(startDate, endDate);
+    if (!dates) return NextResponse.json({ error: "A leave request can cover at most 31 days." }, { status: 400, headers });
     await ensureCallFlowIndexes();
     const db = await getDatabase();
     const client = await getMongoClient();

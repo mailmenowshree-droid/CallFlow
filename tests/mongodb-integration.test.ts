@@ -20,6 +20,7 @@ import { POST as postEngineerLeaveExclusion } from "../app/api/engineers/[id]/le
 import { GET as getReports } from "../app/api/reports/route";
 import { POST as postUser } from "../app/api/users/route";
 import { POST as postBootstrapManager } from "../app/api/auth/bootstrap/route";
+import { POST as postPreviewSeed } from "../app/api/preview/seed/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -73,6 +74,7 @@ integration("MongoDB replica-set integration", () => {
       "wfh_quota",
       "attendance_events",
       "role_policy_locks",
+      "preview_seed_markers",
     ];
     await Promise.all(collections.map((name) => db.collection(name).deleteMany({})));
     vi.mocked(requireSession).mockReset();
@@ -947,6 +949,44 @@ integration("MongoDB replica-set integration", () => {
     expect(await db.collection<{ _id: string }>("leave_capacity").countDocuments({ _id: day })).toBe(0);
   });
 
+  it("rejects invalid calendar dates and overlong leave ranges without reserving capacity", async () => {
+    const memberId = "leave-date-validation";
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer(memberId));
+
+    const invalidRanges = [
+      { startDate: "2026-02-30", endDate: "2026-02-30", reason: "Invalid calendar date" },
+      { startDate: "2026-11-11", endDate: "2026-11-10", reason: "Reversed date range" },
+      { startDate: "2026-11-01", endDate: "2026-12-02", reason: "More than 31 days" },
+    ];
+
+    for (let index = 0; index < invalidRanges.length; index += 1) {
+      setSession(memberId, "Engineer");
+      const response = await postLeave(new NextRequest("http://localhost/api/leaves", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(invalidRanges[index]),
+      }));
+      expect(response.status).toBe(400);
+    }
+
+    expect(await db.collection("leave_requests").countDocuments({})).toBe(0);
+    expect(await db.collection("leave_capacity").countDocuments({})).toBe(0);
+
+    setSession(memberId, "Engineer");
+    const maximumRange = await postLeave(new NextRequest("http://localhost/api/leaves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        startDate: "2026-11-01",
+        endDate: "2026-12-01",
+        reason: "Maximum supported 31-day range",
+      }),
+    }));
+    expect(maximumRange.status).toBe(201);
+    expect(await db.collection("leave_requests").countDocuments({})).toBe(1);
+    expect(await db.collection("leave_capacity").countDocuments({})).toBe(31);
+  });
+
   it("serializes leave capacity, commits audit events, and releases capacity on cancellation", async () => {
     const day = "2026-11-10";
     await db.collection<EngineerRecord>("engineers").insertMany([
@@ -1009,4 +1049,324 @@ integration("MongoDB replica-set integration", () => {
     expect(await db.collection("audit_events").countDocuments({ eventType: "LEAVE_STATUS_CHANGED" })).toBe(2);
     expect(await db.collection("audit_events").countDocuments({ eventType: "LEAVE_REQUESTED" })).toBe(2);
   });
+
+  it("enforces role denials across privileged API routes", async () => {
+    const previousEnv = {
+      vercelEnv: process.env.VERCEL_ENV,
+      seedEnabled: process.env.CALLFLOW_PREVIEW_SEED_ENABLED,
+      databaseName: process.env.MONGODB_DB,
+    };
+    process.env.VERCEL_ENV = "preview";
+    process.env.CALLFLOW_PREVIEW_SEED_ENABLED = "true";
+    process.env.MONGODB_DB = "callflow-preview";
+
+    const cases: Array<{
+      name: string;
+      role: SessionUser["role"];
+      run: () => Promise<Response>;
+    }> = [];
+
+    for (const role of ["Engineer", "SSE"] as const) {
+      cases.push(
+        {
+          name: role + " cannot create team profiles",
+          role,
+          run: () => postEngineer(engineerPostRequest({
+            name: "Unauthorized " + role,
+            role: "Engineer",
+            callQueue: false,
+            ftsQueue: false,
+          })),
+        },
+        {
+          name: role + " cannot edit team profiles",
+          role,
+          run: () => patchEngineer(engineerPatchRequest({ name: "Unauthorized edit" }), {
+            params: Promise.resolve({ id: "engineer-id" }),
+          }),
+        },
+        {
+          name: role + " cannot change rotation leave exclusions",
+          role,
+          run: () => postEngineerLeaveExclusion(
+            engineerLeaveExclusionRequest("start"),
+            { params: Promise.resolve({ id: "leave-exclusion-member" }) },
+          ),
+        },
+        {
+          name: role + " cannot create assignments",
+          role,
+          run: () => postAssignment(new NextRequest("http://localhost/api/assignments", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              kind: "FE",
+              caseNumber: "AUTH-MATRIX",
+              scheduledStartAt: "2026-11-20T10:00:00.000Z",
+            }),
+          })),
+        },
+        {
+          name: role + " cannot skip rotation members",
+          role,
+          run: () => postRotationSkip(rotationSkipRequest("FE_CRU_EVENT")),
+        },
+        {
+          name: role + " cannot access management reports",
+          role,
+          run: () => getReports(new Request("http://localhost/api/reports")),
+        },
+      );
+    }
+
+    for (const role of ["Team Lead", "Engineer", "SSE"] as const) {
+      cases.push({
+        name: role + " cannot create login accounts",
+        role,
+        run: () => postUser(new NextRequest("http://localhost/api/users", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: "Unauthorized account",
+            email: "unauthorized@example.test",
+            password: "CallFlow-Authorization-Test-2026!",
+            role: "Engineer",
+          }),
+        })),
+      });
+    }
+
+    for (const role of ["Team Lead", "Engineer", "SSE"] as const) {
+      cases.push({
+        name: role + " cannot seed preview data",
+        role,
+        run: () => postPreviewSeed(),
+      });
+    }
+
+    try {
+      for (let index = 0; index < cases.length; index += 1) {
+        const item = cases[index];
+        setSession("authorization-matrix-" + index, item.role);
+        const response = await item.run();
+        expect(response.status, item.name).toBe(403);
+      }
+    } finally {
+      if (previousEnv.vercelEnv === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = previousEnv.vercelEnv;
+      if (previousEnv.seedEnabled === undefined) delete process.env.CALLFLOW_PREVIEW_SEED_ENABLED;
+      else process.env.CALLFLOW_PREVIEW_SEED_ENABLED = previousEnv.seedEnabled;
+      if (previousEnv.databaseName === undefined) delete process.env.MONGODB_DB;
+      else process.env.MONGODB_DB = previousEnv.databaseName;
+    }
+  });
+
+  it("seeds preview data once for a Manager without replacing existing records", async () => {
+    const previousEnv = {
+      vercelEnv: process.env.VERCEL_ENV,
+      seedEnabled: process.env.CALLFLOW_PREVIEW_SEED_ENABLED,
+      databaseName: process.env.MONGODB_DB,
+    };
+    process.env.VERCEL_ENV = "preview";
+    process.env.CALLFLOW_PREVIEW_SEED_ENABLED = "true";
+    process.env.MONGODB_DB = "callflow-preview";
+
+    const existingEngineer = { ...makeEngineer("preserved-preview-member"), name: "Preserved preview member" };
+    await db.collection<EngineerRecord>("engineers").insertOne(existingEngineer);
+    await db.collection("assignments").insertOne({
+      id: "preserved-preview-assignment",
+      engineerId: existingEngineer.id,
+      scheduledStartAt: startAt,
+      scheduledEndAt: endAt,
+      status: "Scheduled",
+    });
+
+    const demoEngineerIds = [
+      "demo-eng-01", "demo-eng-02", "demo-eng-03", "demo-eng-04",
+      "demo-eng-05", "demo-eng-06", "demo-sse-01", "demo-tl-01",
+    ];
+
+    try {
+      setSession("preview-seed-manager", "Manager");
+      const first = await postPreviewSeed();
+      expect(first.status).toBe(200);
+      expect(await first.json()).toMatchObject({
+        status: "seeded",
+        counts: { engineers: 8, assignments: 5, leaveRequests: 1 },
+      });
+
+      expect(await db.collection<EngineerRecord>("engineers").findOne({ id: existingEngineer.id }))
+        .toMatchObject({ name: "Preserved preview member", active: true });
+      expect(await db.collection("assignments").findOne({ id: "preserved-preview-assignment" })).not.toBeNull();
+      expect(await db.collection("engineers").countDocuments({ id: { $in: demoEngineerIds } })).toBe(8);
+      expect(await db.collection("assignments").countDocuments({ id: /^demo-assignment-/ })).toBe(5);
+      expect(await db.collection("leave_requests").countDocuments({ id: "demo-leave-pending" })).toBe(1);
+
+      setSession("preview-seed-manager", "Manager");
+      const second = await postPreviewSeed();
+      expect(second.status).toBe(200);
+      expect(await second.json()).toMatchObject({ status: "already_seeded" });
+      expect(await db.collection("engineers").countDocuments({ id: { $in: demoEngineerIds } })).toBe(8);
+      expect(await db.collection("assignments").countDocuments({ id: /^demo-assignment-/ })).toBe(5);
+      expect(await db.collection<{ _id: string }>("preview_seed_markers").countDocuments({ _id: "callflow-demo-data-v1" })).toBe(1);
+    } finally {
+      if (previousEnv.vercelEnv === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = previousEnv.vercelEnv;
+      if (previousEnv.seedEnabled === undefined) delete process.env.CALLFLOW_PREVIEW_SEED_ENABLED;
+      else process.env.CALLFLOW_PREVIEW_SEED_ENABLED = previousEnv.seedEnabled;
+      if (previousEnv.databaseName === undefined) delete process.env.MONGODB_DB;
+      else process.env.MONGODB_DB = previousEnv.databaseName;
+    }
+  });
+
+  it("keeps Engineer and SSE reads self-scoped while Manager and Team Lead reads remain team-wide", async () => {
+    const engineer = makeEngineer("scope-engineer");
+    const sse: EngineerRecord = {
+      ...makeEngineer("scope-sse"),
+      role: "SSE",
+      callQueue: false,
+      ftsQueue: false,
+    };
+    const other = makeEngineer("scope-other");
+    await db.collection<EngineerRecord>("engineers").insertMany([engineer, sse, other]);
+    await db.collection("assignments").insertMany([
+      { id: "scope-assignment-engineer", engineerId: engineer.id, scheduledStartAt: startAt },
+      { id: "scope-assignment-sse", engineerId: sse.id, scheduledStartAt: startAt },
+      { id: "scope-assignment-other", engineerId: other.id, scheduledStartAt: startAt },
+    ]);
+    await db.collection("leave_requests").insertMany([
+      { id: "scope-leave-engineer", engineerId: engineer.id, startDate: "2026-11-20", endDate: "2026-11-20", status: "Pending" },
+      { id: "scope-leave-sse", engineerId: sse.id, startDate: "2026-11-21", endDate: "2026-11-21", status: "Pending" },
+      { id: "scope-leave-other", engineerId: other.id, startDate: "2026-11-22", endDate: "2026-11-22", status: "Pending" },
+    ]);
+
+    for (const member of [
+      { id: engineer.id, role: "Engineer" as const },
+      { id: sse.id, role: "SSE" as const },
+    ]) {
+      setSession(member.id, member.role);
+      const roster = await getEngineers();
+      expect(roster.status).toBe(200);
+      expect((await roster.json()).engineers.map((item: EngineerRecord) => item.id)).toEqual([member.id]);
+
+      setSession(member.id, member.role);
+      const assignments = await getAssignments();
+      expect(assignments.status).toBe(200);
+      expect((await assignments.json()).assignments.map((item: { id: string }) => item.id)).toEqual([
+        member.id === engineer.id ? "scope-assignment-engineer" : "scope-assignment-sse",
+      ]);
+
+      setSession(member.id, member.role);
+      const leaves = await getLeaves();
+      expect(leaves.status).toBe(200);
+      expect((await leaves.json()).leaves.map((item: { id: string }) => item.id)).toEqual([
+        member.id === engineer.id ? "scope-leave-engineer" : "scope-leave-sse",
+      ]);
+    }
+
+    for (const role of ["Manager", "Team Lead"] as const) {
+      setSession("scope-" + role, role);
+      const roster = await getEngineers();
+      expect((await roster.json()).engineers).toHaveLength(3);
+
+      setSession("scope-" + role, role);
+      const assignments = await getAssignments();
+      expect((await assignments.json()).assignments).toHaveLength(3);
+
+      setSession("scope-" + role, role);
+      const leaves = await getLeaves();
+      expect((await leaves.json()).leaves).toHaveLength(3);
+    }
+  });
+
+  it("denies Engineer and SSE cross-user mutations while allowing privileged attendance recording", async () => {
+    await db.collection<EngineerRecord>("engineers").insertMany([
+      makeEngineer("cross-assignment-owner"),
+      makeEngineer("attendance-target-manager"),
+      makeEngineer("attendance-target-lead"),
+    ]);
+    await db.collection("assignments").insertOne({
+      id: "cross-user-assignment",
+      engineerId: "cross-assignment-owner",
+      scheduledStartAt: startAt,
+      scheduledEndAt: endAt,
+      status: "Scheduled",
+    });
+    await db.collection("leave_requests").insertOne({
+      id: "cross-user-leave",
+      engineerId: "cross-assignment-owner",
+      startDate: "2026-11-25",
+      endDate: "2026-11-25",
+      status: "Pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    for (const role of ["Engineer", "SSE"] as const) {
+      const actorId = "cross-user-" + role;
+      setSession(actorId, role);
+      const assignment = await patchAssignment(
+        assignmentPatchRequest("cross-user-assignment", "In Progress"),
+        { params: Promise.resolve({ id: "cross-user-assignment" }) },
+      );
+      expect(assignment.status).toBe(403);
+
+      setSession(actorId, role);
+      const attendance = await postAttendance(attendanceRequest({
+        action: "check-in",
+        workMode: "Office",
+        engineerId: "attendance-target-manager",
+      }));
+      expect(attendance.status).toBe(403);
+
+      setSession(actorId, role);
+      const leave = await patchLeave(
+        leavePatchRequest("Approved"),
+        { params: Promise.resolve({ id: "cross-user-leave" }) },
+      );
+      expect(leave.status).toBe(403);
+    }
+
+    setSession("attendance-manager", "Manager");
+    const managerAttendance = await postAttendance(attendanceRequest({
+      action: "check-in",
+      workMode: "Office",
+      engineerId: "attendance-target-manager",
+    }));
+    expect(managerAttendance.status).toBe(200);
+
+    setSession("attendance-lead", "Team Lead");
+    const leadAttendance = await postAttendance(attendanceRequest({
+      action: "check-in",
+      workMode: "Office",
+      engineerId: "attendance-target-lead",
+    }));
+    expect(leadAttendance.status).toBe(200);
+  });
+
+  it("allows linked Manager and SSE profiles to submit their own leave requests", async () => {
+    await db.collection<EngineerRecord>("engineers").insertMany([
+      { ...makeEngineer("leave-manager"), role: "Manager", callQueue: false, ftsQueue: false },
+      { ...makeEngineer("leave-sse"), role: "SSE", callQueue: false, ftsQueue: false },
+    ]);
+
+    for (const member of [
+      { id: "leave-manager", role: "Manager" as const, day: "2026-11-27" },
+      { id: "leave-sse", role: "SSE" as const, day: "2026-11-28" },
+    ]) {
+      setSession(member.id, member.role);
+      const response = await postLeave(new NextRequest("http://localhost/api/leaves", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          startDate: member.day,
+          endDate: member.day,
+          reason: "Linked profile self-service",
+        }),
+      }));
+      expect(response.status).toBe(201);
+      expect((await response.json()).leave.engineerId).toBe(member.id);
+    }
+  });
+
 });
