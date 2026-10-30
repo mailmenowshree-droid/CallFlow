@@ -16,6 +16,7 @@ import { POST as postRotationSkip } from "../app/api/rotations/skip/route";
 import { POST as postAttendance } from "../app/api/attendance/route";
 import { GET as getEngineers, POST as postEngineer } from "../app/api/engineers/route";
 import { PATCH as patchEngineer } from "../app/api/engineers/[id]/route";
+import { POST as postEngineerLeaveExclusion } from "../app/api/engineers/[id]/leave/route";
 import { GET as getReports } from "../app/api/reports/route";
 import { POST as postUser } from "../app/api/users/route";
 
@@ -193,6 +194,15 @@ integration("MongoDB replica-set integration", () => {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status }),
+    },
+  );
+
+  const engineerLeaveExclusionRequest = (action: "start" | "clear") => new NextRequest(
+    "http://localhost/api/engineers/leave-exclusion-member/leave",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
     },
   );
 
@@ -517,6 +527,53 @@ integration("MongoDB replica-set integration", () => {
       role: "Manager",
       active: true,
     });
+  });
+
+  it("restricts temporary leave exclusions and commits their audit events with the roster update", async () => {
+    const memberId = "leave-exclusion-member";
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer(memberId));
+
+    setSession("leave-exclusion-lead", "Team Lead");
+    const started = await postEngineerLeaveExclusion(
+      engineerLeaveExclusionRequest("start"),
+      { params: Promise.resolve({ id: memberId }) },
+    );
+    expect(started.status).toBe(200);
+    const startedPayload = await started.json();
+    expect(typeof startedPayload.leaveUntil).toBe("string");
+    const afterStart = await db.collection<EngineerRecord>("engineers").findOne({ id: memberId });
+    expect(afterStart?.leaveUntil).toBeInstanceOf(Date);
+    expect(afterStart?.leaveUntil?.getTime()).toBeGreaterThan(Date.now());
+    expect(await db.collection("audit_events").findOne({
+      eventType: "LEAVE_EXCLUSION_STARTED",
+      entityId: memberId,
+      actorId: "leave-exclusion-lead",
+    })).toMatchObject({ metadata: { durationHours: 24 } });
+
+    setSession(memberId, "Engineer");
+    const forbiddenClear = await postEngineerLeaveExclusion(
+      engineerLeaveExclusionRequest("clear"),
+      { params: Promise.resolve({ id: memberId }) },
+    );
+    expect(forbiddenClear.status).toBe(403);
+    expect((await db.collection<EngineerRecord>("engineers").findOne({ id: memberId }))?.leaveUntil).toBeInstanceOf(Date);
+
+    setSession("leave-exclusion-manager", "Manager");
+    const cleared = await postEngineerLeaveExclusion(
+      engineerLeaveExclusionRequest("clear"),
+      { params: Promise.resolve({ id: memberId }) },
+    );
+    expect(cleared.status).toBe(200);
+    expect((await db.collection<EngineerRecord>("engineers").findOne({ id: memberId }))?.leaveUntil).toBeUndefined();
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "LEAVE_EXCLUSION_STARTED",
+      entityId: memberId,
+    })).toBe(1);
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "LEAVE_EXCLUSION_CLEARED",
+      entityId: memberId,
+      actorId: "leave-exclusion-manager",
+    })).toBe(1);
   });
 
   it("limits SSE roster and record access to self while permitting own assignment updates", async () => {
