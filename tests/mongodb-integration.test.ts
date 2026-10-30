@@ -10,6 +10,7 @@ import { reserveWfhDay, type WfhReservationResult } from "@/lib/wfh-quota";
 import type { EngineerRecord, RotationRecord } from "@/lib/callflow-types";
 import { POST as postLeave } from "../app/api/leaves/route";
 import { PATCH as patchLeave } from "../app/api/leaves/[id]/route";
+import { POST as postRotationSkip } from "../app/api/rotations/skip/route";
 
 vi.mock("@/lib/auth", () => ({ requireSession: vi.fn() }));
 
@@ -115,6 +116,16 @@ integration("MongoDB replica-set integration", () => {
     return result;
   }
 
+
+  const rotationSkipRequest = (rotation: "FE_CRU_EVENT" | "FTS") => new NextRequest(
+    "http://localhost/api/rotations/skip",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rotation }),
+    },
+  );
+
   const leavePostRequest = () => new NextRequest("http://localhost/api/leaves", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -206,6 +217,57 @@ integration("MongoDB replica-set integration", () => {
     const rotation = await db.collection<RotationRecord>("rotation_state").findOne({ _id: "FE_CRU_EVENT" });
     expect(rotation?.completedAssignments).toBe(1);
     expect(await db.collection("audit_events").countDocuments({ eventType: "ASSIGNMENT_STATUS_CHANGED", "metadata.to": "Completed" })).toBe(1);
+  });
+
+
+  it("serializes concurrent rotation skips and keeps the cooldown isolated to its queue", async () => {
+    await db.collection<EngineerRecord>("engineers").insertMany([
+      makeEngineer("skip-a"),
+      makeEngineer("skip-b"),
+      makeEngineer("skip-c"),
+    ]);
+    await seedRotation(["skip-a", "skip-b", "skip-c"], "FE_CRU_EVENT");
+    await seedRotation(["skip-a", "skip-b", "skip-c"], "FTS");
+
+    setSession("lead-one", "Team Lead");
+    setSession("manager-two", "Manager");
+    const responses = await Promise.all([
+      postRotationSkip(rotationSkipRequest("FE_CRU_EVENT")),
+      postRotationSkip(rotationSkipRequest("FE_CRU_EVENT")),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 200]);
+
+    const payloads = await Promise.all(responses.map((response) => response.json()));
+    const skippedIds = new Set(payloads.map((payload) => payload.engineerId));
+    expect(skippedIds).toEqual(new Set(["skip-a", "skip-b"]));
+
+    const skippedEngineers = await db.collection<EngineerRecord>("engineers")
+      .find({ id: { $in: [...skippedIds] } }).toArray();
+    expect(skippedEngineers).toHaveLength(2);
+    for (const engineer of skippedEngineers) {
+      expect(engineer.skipUntilCompletionByRotation?.FE_CRU_EVENT).toBe(3);
+      expect(engineer.skipUntilCompletionByRotation?.FTS).toBeUndefined();
+    }
+
+    const callRotation = await db.collection<RotationRecord>("rotation_state")
+      .findOne({ _id: "FE_CRU_EVENT" });
+    expect(callRotation?.nextIndex).toBe(0);
+    expect(callRotation?.completedAssignments).toBe(0);
+    expect(callRotation?.skipMutationVersion).toBe(2);
+    expect(await db.collection("audit_events").countDocuments({
+      eventType: "ROTATION_ENGINEER_SKIPPED",
+      "metadata.rotation": "FE_CRU_EVENT",
+    })).toBe(2);
+
+    const ftsAssignment = await createAssignment({
+      ...assignmentInput("fts-after-call-skips"),
+      rotation: "FTS",
+      kind: "FTS",
+    });
+    expect(ftsAssignment.engineerId).toBe("skip-a");
+
+    const callAssignment = await createAssignment(assignmentInput("call-after-skips"));
+    expect(callAssignment.engineerId).toBe("skip-c");
   });
 
   it("serializes same-day WFH check-ins and records only one event", async () => {
