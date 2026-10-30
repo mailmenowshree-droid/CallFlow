@@ -1,22 +1,42 @@
 # CallFlow
 
-Browser-based call assignment and operations dashboard.
+Call assignment and operations dashboard for Team Leads, Managers, and engineers.
 
 ## Stack
-- Next.js App Router
-- React + TypeScript
-- Tailwind CSS
-- MongoDB Atlas (planned persistence)
-- Vercel deployment
 
-## Current status
-This is the initial UI prototype. The dashboard uses sample data only. Authentication, database persistence, transactional round-robin assignment, scheduled reminders, attendance APIs, and WhatsApp integration are not yet implemented.
+- Next.js 14 App Router, React 18, TypeScript, Tailwind CSS
+- MongoDB Atlas for users, engineers, assignments, rotations, attendance, leave, and audit records
+- bcryptjs password hashes and signed HS256 session cookies
 
-## Security
-Do not commit secrets, real customer records, or production case data. Use environment variables and approved access controls before operational use.
+## Authentication and initial setup
+
+1. Configure `MONGODB_URI`, `MONGODB_DB`, and a cryptographically random `SESSION_SECRET` of at least 32 characters.
+2. For the one-time Manager bootstrap, configure `CALLFLOW_BOOTSTRAP_TOKEN` (at least 32 random characters) and `BOOTSTRAP_MANAGER_EMAIL`.
+3. Open `/setup-manager`, enter the configured email, Manager name, bootstrap token, and a password of at least 14 characters.
+4. After the Manager account is created, remove `CALLFLOW_BOOTSTRAP_TOKEN` and `BOOTSTRAP_MANAGER_EMAIL` from the deployed environment and redeploy.
+5. Sign in from the CallFlow home page. A session is stored in an HTTP-only, SameSite=Strict cookie.
+
+The development-only fixed Manager identity is enabled only when `NODE_ENV=development`. Deployed Vercel Preview and production environments require a real session; Preview deployments do not receive an implicit Manager identity.
 
 ## Local development
+
 ```bash
 npm install
 npm run dev
 ```
+
+## Validation
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+GitHub Actions runs these checks for pull requests and pushes to `main` and `feature/**` branches.
+
+## Operational boundaries
+
+- MongoDB transactions require a replica set or sharded cluster.
+- Use only synthetic data in previews and tests. Never commit credentials, tokens, or real customer/case data.
+- Do not treat a successful build or preview deployment as proof of end-to-end operational readiness. Database concurrency, browser workflows, and production configuration must be verified separately.

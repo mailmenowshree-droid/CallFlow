@@ -1,77 +1,47 @@
 # CallFlow Project Status
 
-Last reviewed: 2026-10-17
-Repository: https://github.com/mailmenowshree-droid/CallFlow
-Default branch: `main`
+Last reviewed: 2026-10-30  
+Repository: https://github.com/mailmenowshree-droid/CallFlow  
+Working branch: `feature/agent-preview-seed-type-fix`  
+Baseline: `feature/mongodb-foundation`
 
-## Current verified state
+## Current implementation inventory
 
-- The repository contains a Next.js 14 App Router, React, TypeScript, and Tailwind CSS UI prototype.
-- `app/page.tsx` renders a sample operations dashboard, illustrative FE + CRU Events and FTS rotations, a local request form, search, and a Start Call UI action. The request form now accepts case number, date picker, 30-minute time slots displayed in IST, optional notes, and optional manual engineer selection.
-- Request records live only in React component state. Refreshing the page loses changes.
-- The sample engineers, request IDs, customers, assignment queues, counts, and statuses are demo values; they are not operational data.
-- `README.md` explicitly states that authentication, database persistence, transactional round-robin assignment, scheduled reminders, attendance APIs, and WhatsApp integration are not implemented.
-- `package.json` contains Next.js/React/Tailwind dependencies. MongoDB driver/ODM and authentication libraries are not present in the declared dependencies.
-- A GitHub Actions workflow now checks TypeScript, unit tests, and a production build; the first run is in progress.
-- No deployment has been verified as part of this review.
-- Repository visibility is public. Never commit secrets, real customer/case data, access tokens, or database connection strings.
-
-## Requirements and implementation status
-
-| Capability | Status | Notes |
+| Capability | Code present | Verification boundary |
 |---|---|---|
-| Browser dashboard | Prototype present | Uses hard-coded/demo data and local component state |
-| Team Lead request entry | Partial prototype | Form accepts case number, assignment type, date, 30-minute IST time slot, optional notes and optional manual engineer; records remain in browser state only |\n| Assignment notes | Prototype present | Optional notes are displayed beside each assignment; not persistent across refreshes |\n| Date/time entry | Prototype present | Native date picker and 48 half-hour time slots displayed in IST; no server-side timezone validation yet |
-| Separate FE + CRU Events rotation | UI illustration + pure rule module | Not yet persisted or connected to API |
-| Separate FTS rotation | UI illustration + pure rule module | Can use separate rotation state; not yet persisted or connected to API |
-| Assignment confirmation | Not implemented | Requires authenticated Team Lead flow and server-side validation |
-| Team Lead / Manager / Engineer roles | Not implemented | No authentication or authorization found |
-| Engineer availability/scheduling/busy intervals | Not implemented | Dashboard roster is illustrative |
-| Engineer availability confirmation | Not implemented | No persisted confirmations |
-| Manual skip for next three completed assignments | Pure helper + unit test added | Not yet connected to persistent assignment service; CI result pending |
-| Leave excludes engineer for 24 hours | Not implemented | Requires timezone-aware timestamps and server-side eligibility checks |
-| Scheduled-call reminders | Not implemented | Requires durable scheduler/worker and notification provider |
-| Start Call / Complete Call lifecycle | Partial UI | Start Call only updates local state; completion action/persistence is absent |
-| Attendance check-in/check-out | Not implemented | No APIs, authorized correction flow, or audit trail |
-| WhatsApp notifications | Not implemented | Provider, templates, consent/configuration, retry handling TBD |
-| Reporting, exports, operational dashboards | Partial UI only | Current numbers are computed from in-memory demo data |
-| MongoDB Atlas persistence | Not implemented | No MongoDB dependency or database layer found |
-| Atomic/concurrency-safe assignments | Not implemented | Pure selection logic only; persistence and atomic pointer updates still required |
-| Automated tests / CI | Not found | No workflow files or workflow runs were found |
-| Vercel deployment | Unverified | Do not claim deployment success until a live deployment is checked |
+| Dashboard and assignment UI | Yes | Browser end-to-end workflows not yet verified |
+| MongoDB persistence | Yes | Requires configured replica-set deployment for transaction tests |
+| Authentication | Manager bootstrap, bcrypt password hashes, JWT session cookie, login/logout endpoints, and session lookup | CI pending; real deployed login flow not yet verified |
+| Preview access control | Deployed previews require a real session; fixed Manager identity is local-development-only | Must verify Vercel Preview environment and configured secrets |
+| Role authorization | API routes enforce role checks for privileged operations | Route-level authorization tests remain incomplete |
+| Engineer/team management | API and dashboard flows present | Database integration and role-matrix tests remain incomplete |
+| Round-robin assignment | Transactional assignment service with separate FE/CRU/Event and FTS rotations | Concurrent MongoDB transaction tests remain incomplete |
+| Assignment lifecycle | Transactional status transitions and completion counters | Database integration and race tests remain incomplete |
+| Attendance and WFH quota | Attendance API, audit events, and quarterly quota reservation service | Live quota concurrency and end-to-end checks remain incomplete |
+| Leave requests and capacity | Transactional requests, per-day reservation documents, approval/cancellation routes | Concurrent capacity tests remain incomplete |
+| Reporting and CSV export | Report API and dashboard export UI | Browser/export regression tests remain incomplete |
+| Automated checks | GitHub Actions typecheck, unit tests, and production build | Must pass on the current PR head |
 
-## Architecture and safety decisions
+## Security and dependency notes
 
-1. CallFlow is independent from Defendex and JARVIS. Do not change either project while working on CallFlow.
-2. Keep CallFlow database, credentials, environment variables, deployment configuration, and integrations separate.
-3. Never trust client-supplied assignment state. Eligibility checks, round-robin pointer updates, assignment creation, skip counters, and audit records must be enforced on the server.
-4. FE and CRU Events share one persistent rotation; FTS has a separate persistent rotation.
-5. Team Lead manually enters requests and reviews/confirms proposed assignments.
-6. A manual skip bypasses the engineer for the next three **completed assignments**. Define counter decrement semantics explicitly in tests; cancelled or merely scheduled calls must not decrement the counter.
-7. Leave excludes an engineer for 24 hours from the recorded leave start/decision time, using UTC storage and clearly displayed local time.
-8. Privileged changes (attendance corrections, skip/leave changes, manual reassignment) require role checks, a reason where appropriate, and append-only audit history.
-9. The public repository must contain only code and safe synthetic data. Store secrets in deployment environment settings, never in source or commit history.
+- Do not commit secrets, real customer records, or production case data.
+- The repository currently has no committed npm lockfile. Dependency resolution is therefore not reproducible across installs.
+- A prior install reported 15 dependency vulnerabilities (5 moderate, 7 high, 3 critical). The exact dependency tree and advisory set have not yet been reproduced; do not apply broad or major-version upgrades without a fresh audit and compatibility checks.
+- MongoDB transaction features require a replica set or sharded cluster.
 
-## Risks / blockers
+## Next work
 
-- The current dashboard can visually imply live assignment state, but it is demo-only.
-- The Start Call action only mutates browser state and has no authorization, durable state, or audit trail.
-- The current `lint` script uses `next lint`; compatibility must be checked against the installed Next.js version and a clean install.
-- There is no verified build/test result or verified Vercel deployment in this review.
-- No database schema, environment-variable contract, authentication strategy, notification provider, or scheduler has been implemented yet.
+1. Verify the current PR head's typecheck, unit tests, and production build.
+2. Add route-level tests for authentication, role authorization, and session expiry.
+3. Add MongoDB integration tests for concurrent assignment, leave-capacity, attendance, and WFH quota operations when a free test replica set is available.
+4. Add browser end-to-end coverage for sign-in, role-specific screens, assignment lifecycle, leave, attendance, and report export.
+5. Document and verify preview and production environment configuration without deploying or changing production settings.
 
-## Recommended next actions
+## Latest change
 
-1. Finish the first GitHub Actions run for dependency installation, TypeScript check, unit tests, and production build; fix any failures before merging.
-2. Design and implement MongoDB persistence and authentication/role authorization before presenting the app as operational.
-3. Implement the atomic assignment domain service with two distinct rotations and automated tests for concurrent requests, eligibility, three-completed-assignment skip counters, and 24-hour leave exclusion.
-4. Connect the Team Lead request and assignment-confirmation flow to server APIs, then implement call lifecycle and immutable audit events.
-5. Add engineer scheduling/availability, attendance with authorized corrections, reporting/exports, reminders, and WhatsApp notifications in separately tested increments.
-6. Verify a Vercel deployment and end-to-end workflows only after the build and integration checks pass.
-
-## Validation log
-
-- 2026-10-17: Reviewed repository metadata, README, package manifest, UI files, TypeScript configuration, and Tailwind configuration through the GitHub connector.
-- 2026-10-17: Added a pure round-robin domain module and Vitest coverage for rotation order, overlapping busy intervals, inactive/leave eligibility, three-completion skip cooldown, and no-eligible behavior.
-- 2026-10-17: Added GitHub Actions validation. An earlier run (38984052380) passed TypeScript and unit tests; production build status was not conclusively verified here. Later UI commits still need fresh CI confirmation.\n- 2026-10-17: Added optional assignment notes and updated the TL request form to use case number, date picker, 30-minute time slots displayed in IST, and show scheduled date in the assignments list. These changes are committed to `feature/validation-baseline`; fresh CI has not yet been verified.
-- Not run locally: install, TypeScript check, unit tests, or production build. CI has passed TypeScript and unit tests; production build is still pending. Database tests, browser end-to-end tests, and live deployment verification have not been run.
+- Removed the implicit Manager session from deployed Vercel Preview environments.
+- Added email/password login and logout endpoints and a sign-in screen.
+- Kept the fixed Manager identity limited to local development.
+- Updated the one-time Manager setup screen to collect the configured email and name and enforce the 14-character password policy.
+- Changed bootstrap bearer-token comparison to a constant-time comparison.
+- Automated checks and deployed login behavior remain unverified until the current PR checks complete.

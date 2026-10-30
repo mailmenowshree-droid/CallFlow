@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { hash } from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
@@ -16,8 +16,9 @@ export async function POST(request: NextRequest) {
   }
 
   const suppliedToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (suppliedToken.length !== expectedToken.length ||
-      !Buffer.from(suppliedToken).equals(Buffer.from(expectedToken))) {
+  const expectedBytes = Buffer.from(expectedToken);
+  const suppliedBytes = Buffer.from(suppliedToken);
+  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401, headers: noStore });
   }
 
