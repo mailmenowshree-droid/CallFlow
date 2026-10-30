@@ -948,6 +948,44 @@ integration("MongoDB replica-set integration", () => {
     expect(await db.collection<{ _id: string }>("leave_capacity").countDocuments({ _id: day })).toBe(0);
   });
 
+  it("rejects invalid calendar dates and overlong leave ranges without reserving capacity", async () => {
+    const memberId = "leave-date-validation";
+    await db.collection<EngineerRecord>("engineers").insertOne(makeEngineer(memberId));
+
+    const invalidRanges = [
+      { startDate: "2026-02-30", endDate: "2026-02-30", reason: "Invalid calendar date" },
+      { startDate: "2026-11-11", endDate: "2026-11-10", reason: "Reversed date range" },
+      { startDate: "2026-11-01", endDate: "2026-12-02", reason: "More than 31 days" },
+    ];
+
+    for (let index = 0; index < invalidRanges.length; index += 1) {
+      setSession(memberId, "Engineer");
+      const response = await postLeave(new NextRequest("http://localhost/api/leaves", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(invalidRanges[index]),
+      }));
+      expect(response.status).toBe(400);
+    }
+
+    expect(await db.collection("leave_requests").countDocuments({})).toBe(0);
+    expect(await db.collection("leave_capacity").countDocuments({})).toBe(0);
+
+    setSession(memberId, "Engineer");
+    const maximumRange = await postLeave(new NextRequest("http://localhost/api/leaves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        startDate: "2026-11-01",
+        endDate: "2026-12-01",
+        reason: "Maximum supported 31-day range",
+      }),
+    }));
+    expect(maximumRange.status).toBe(201);
+    expect(await db.collection("leave_requests").countDocuments({})).toBe(1);
+    expect(await db.collection("leave_capacity").countDocuments({})).toBe(31);
+  });
+
   it("serializes leave capacity, commits audit events, and releases capacity on cancellation", async () => {
     const day = "2026-11-10";
     await db.collection<EngineerRecord>("engineers").insertMany([
