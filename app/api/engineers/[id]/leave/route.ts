@@ -30,7 +30,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const session = client.startSession();
     const now = new Date();
     const clear = value.action === "clear";
-    const leaveUntil = clear ? null : new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const leaveUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
     try {
       await session.withTransaction(async () => {
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       await session.endSession();
     }
 
-    return NextResponse.json({ ok: true, leaveUntil }, { headers: noStore });
+    return NextResponse.json({ ok: true, leaveUntil: clear ? null : leaveUntil }, { headers: noStore });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED") return NextResponse.json({ error: "Sign in required." }, { status: 401, headers: noStore });
     if (error instanceof Error && error.message === "FORBIDDEN") return NextResponse.json({ error: "You do not have permission to perform this action." }, { status: 403, headers: noStore });
