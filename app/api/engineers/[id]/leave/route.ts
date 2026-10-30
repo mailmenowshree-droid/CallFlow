@@ -7,8 +7,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "no-store" };
 
-export async function POST(request: NextRequest, context: { params: { id: string } }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const actor = await requireSession(["Team Lead", "Manager"]);
     let body: unknown = {};
     try {
@@ -28,11 +29,11 @@ export async function POST(request: NextRequest, context: { params: { id: string
     const clear = value.action === "clear";
     const update = clear
       ? await db.collection<EngineerRecord>("engineers").updateOne(
-          { id: context.params.id },
+          { id: id },
           { $unset: { leaveUntil: "" }, $set: { updatedAt: now } },
         )
       : await db.collection<EngineerRecord>("engineers").updateOne(
-          { id: context.params.id, active: true },
+          { id: id, active: true },
           { $set: { leaveUntil: new Date(now.getTime() + 24 * 60 * 60 * 1000), updatedAt: now } },
         );
     if (update.matchedCount !== 1) {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest, context: { params: { id: string
     }
     await db.collection("audit_events").insertOne({
       eventType: clear ? "LEAVE_EXCLUSION_CLEARED" : "LEAVE_EXCLUSION_STARTED",
-      entityId: context.params.id,
+      entityId: id,
       actorId: actor.id,
       occurredAt: now,
       metadata: clear ? {} : { durationHours: 24, expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000) },

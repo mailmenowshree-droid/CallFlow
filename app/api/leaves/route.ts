@@ -27,9 +27,12 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body.startDate !== "string" || typeof body.endDate !== "string" || typeof body.reason !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate) || body.endDate < body.startDate || !body.reason.trim()) {
       return NextResponse.json({ error: "Choose a valid date range and enter a reason." }, { status: 400, headers });
     }
+    const startDate = body.startDate as string;
+    const endDate = body.endDate as string;
+    const reason = body.reason as string;
     const dates: string[] = [];
-    const cursor = new Date(body.startDate + "T12:00:00Z");
-    const end = new Date(body.endDate + "T12:00:00Z");
+    const cursor = new Date(startDate + "T12:00:00Z");
+    const end = new Date(endDate + "T12:00:00Z");
     while (cursor <= end && dates.length <= 31) { dates.push(cursor.toISOString().slice(0, 10)); cursor.setUTCDate(cursor.getUTCDate() + 1); }
     if (!dates.length || dates.length > 31) return NextResponse.json({ error: "A leave request can cover at most 31 days." }, { status: 400, headers });
     await ensureCallFlowIndexes();
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
     if (!engineer) return NextResponse.json({ error: "Active team profile not found." }, { status: 422, headers });
     const session = client.startSession();
     const now = new Date();
-    const leave = { id: randomUUID(), engineerId: user.id, engineerName: user.name, startDate: body.startDate, endDate: body.endDate, reason: body.reason.trim().slice(0, 500), status: "Pending", createdAt: now, updatedAt: now };
+    const leave = { id: randomUUID(), engineerId: user.id, engineerName: user.name, startDate: startDate, endDate: endDate, reason: reason.trim().slice(0, 500), status: "Pending", createdAt: now, updatedAt: now };
     try {
       await session.withTransaction(async () => {
         // Each date document is a write lock. Concurrent applications for an overlapping
@@ -51,17 +54,17 @@ export async function POST(request: NextRequest) {
             { upsert: true, session },
           );
         }
-        const existing = await db.collection("leave_requests").find({
+        const existing = await db.collection<{ startDate: string; endDate: string }>("leave_requests").find({
           status: { $in: ["Pending", "Approved"] },
-          startDate: { $lte: body.endDate },
-          endDate: { $gte: body.startDate },
+          startDate: { $lte: endDate },
+          endDate: { $gte: startDate },
         }, { session }).toArray();
         for (const day of dates) {
-          const count = existing.filter((item: any) => item.startDate <= day && item.endDate >= day).length;
+          const count = existing.filter((item) => item.startDate <= day && item.endDate >= day).length;
           if (count >= 2) throw new Error("LEAVE_FULL:" + day);
         }
         await db.collection("leave_requests").insertOne(leave, { session });
-        await db.collection("audit_events").insertOne({ eventType: "LEAVE_REQUESTED", entityId: leave.id, actorId: user.id, occurredAt: now, metadata: { startDate: body.startDate, endDate: body.endDate } }, { session });
+        await db.collection("audit_events").insertOne({ eventType: "LEAVE_REQUESTED", entityId: leave.id, actorId: user.id, occurredAt: now, metadata: { startDate: startDate, endDate: endDate } }, { session });
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("LEAVE_FULL:")) return NextResponse.json({ error: error.message.slice(11) + " is full: two people have already applied for or been approved for leave. Please choose another day." }, { status: 409, headers });

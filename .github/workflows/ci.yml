@@ -1,19 +1,74 @@
 name: CallFlow validation
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
-    branches: [main, "feature/**"]
+    branches: [main]
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      MONGODB_URI: mongodb://127.0.0.1:27017/callflow_ci_test?replicaSet=rs0
+      MONGODB_DB: callflow_ci_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install
+          node-version: 24.11.0
+      - name: Start an ephemeral MongoDB replica set
+        run: |
+          docker run --detach --name callflow-mongo --publish 27017:27017 mongo:7.0 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec callflow-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' 2>/dev/null | grep -q 1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec callflow-mongo mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec callflow-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' 2>/dev/null | grep -q true; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MongoDB replica set did not become writable."
+          docker logs callflow-mongo
+          exit 1
+      - run: npm ci --no-audit --no-fund
+      - name: Report dependency audit findings
+        run: |
+          npm audit --json > /tmp/callflow-npm-audit.json 2> /tmp/callflow-npm-audit.stderr || true
+          node <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = "/tmp/callflow-npm-audit.json";
+          const raw = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, "utf8") : "";
+          try {
+            const report = JSON.parse(raw);
+            const totals = report.metadata?.vulnerabilities ?? {};
+            console.log("npm audit totals:", JSON.stringify(totals));
+            for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+              console.log(`${name}: severity=${item.severity}; direct=${item.isDirect}; range=${item.range}`);
+              for (const advisory of item.via ?? []) {
+                if (typeof advisory === "object") console.log(`  ${advisory.title} ${advisory.url}`);
+              }
+              console.log(`  fixAvailable=${JSON.stringify(item.fixAvailable)}`);
+            }
+          } catch {
+            console.log("npm audit did not produce a JSON report.");
+            const errorPath = "/tmp/callflow-npm-audit.stderr";
+            if (fs.existsSync(errorPath)) console.log(fs.readFileSync(errorPath, "utf8"));
+            console.log(raw);
+          }
+          NODE
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Stop the ephemeral MongoDB replica set
+        if: always()
+        run: docker rm --force callflow-mongo || true
+

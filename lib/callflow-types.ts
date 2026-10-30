@@ -47,5 +47,7 @@ export type RotationRecord = {
   engineerIds: string[];
   nextIndex: number;
   completedAssignments: number;
+  /** Incremented by transactional skip actions to serialize them with assignment/completion writes. */
+  skipMutationVersion?: number;
   updatedAt: Date;
 };

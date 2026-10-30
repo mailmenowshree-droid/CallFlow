@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Activity, CalendarDays, CheckCircle2, Clock3, FileBarChart2, LayoutDashboard, Plus, Search, Users, X, SkipForward } from "lucide-react";
+import { Activity, CalendarDays, FileBarChart2, LayoutDashboard, LogOut, Plus, Search, Users, X, SkipForward } from "lucide-react";
 
 type Kind = "FE" | "CRU" | "Event" | "FTS";
 type Status = "Scheduled" | "In Progress" | "Completed" | "Needs attention" | "Cancelled";
@@ -27,6 +27,11 @@ export default function Home() {
  const [area,setArea] = useState<Area>("Overview");
  const [teamView,setTeamView] = useState<TeamView>("Roster");
  const [engineers,setEngineers] = useState<Engineer[]>([]);
+ const [currentUser,setCurrentUser] = useState<SessionUser|null>(null);
+ const [authLoading,setAuthLoading] = useState(true);
+ const [loginEmail,setLoginEmail] = useState("");
+ const [loginPassword,setLoginPassword] = useState("");
+ const [loginBusy,setLoginBusy] = useState(false);
  const [calls,setCalls] = useState<Call[]>([]);
  const [leaves,setLeaves] = useState<LeaveItem[]>([]);
  const [reportData,setReportData] = useState<ReportData|null>(null);
@@ -36,12 +41,11 @@ export default function Home() {
  const [leaveReason,setLeaveReason] = useState("");
  const [reportStart,setReportStart] = useState(localDate());
  const [reportEnd,setReportEnd] = useState(localDate());
- const sessionUser: SessionUser = {
-   id: "callflow-preview-manager",
-   email: "preview-manager@callflow.local",
-   name: "CallFlow Preview",
-   role: "Manager",
- };
+ const sessionUser = useMemo<SessionUser>(
+   () => currentUser ?? { id: "", email: "", name: "", role: "Engineer" },
+   [currentUser],
+ );
+ const canManage = sessionUser.role === "Manager" || sessionUser.role === "Team Lead";
  const [newUserEmail,setNewUserEmail] = useState("");
  const [newUserPassword,setNewUserPassword] = useState("");
  const [newUserRole,setNewUserRole] = useState<Role>("Engineer");
@@ -115,31 +119,81 @@ export default function Home() {
    let alive = true;
    (async () => {
      try {
+       const response = await fetch("/api/auth/me", { cache: "no-store" });
+       if (response.status === 401) {
+         if (alive) setCurrentUser(null);
+         return;
+       }
+       const data = await response.json();
+       if (!response.ok || !data.user) throw new Error(data.error ?? "Could not verify your CallFlow session.");
+       if (alive) setCurrentUser(data.user as SessionUser);
        await loadWorkspace();
      } catch (error) {
        if (alive) setNotice(error instanceof Error ? error.message : "Unable to load CallFlow.");
+     } finally {
+       if (alive) setAuthLoading(false);
      }
    })();
    return () => { alive = false; };
  }, []);
+ const demoReportData = useMemo<ReportData | null>(() => {
+   if (!demoMode || area !== "Reports" || !canManage) return null;
+   const rows = calls
+     .filter(call => call.date >= reportStart && call.date <= reportEnd)
+     .map(call => ({
+       id: call.id,
+       caseNumber: call.caseNumber,
+       kind: call.kind,
+       engineer: call.engineer,
+       scheduledStartAt: new Date(`${call.date}T${call.time}:00+05:30`).toISOString(),
+       status: call.status,
+       lateOrMissed: call.status !== "Completed" && call.status !== "Cancelled" && call.date < localDate(),
+       manual: Boolean(call.manual),
+       notes: call.notes,
+     }));
+   const counts = {
+     total: rows.length,
+     completed: rows.filter(row => row.status === "Completed").length,
+     scheduled: rows.filter(row => row.status === "Scheduled").length,
+     inProgress: rows.filter(row => row.status === "In Progress").length,
+     needsAttention: rows.filter(row => row.status === "Needs attention").length,
+     cancelled: rows.filter(row => row.status === "Cancelled").length,
+     lateOrMissed: rows.filter(row => row.lateOrMissed).length,
+   };
+   const active = engineers.filter(engineer => engineer.active && engineer.role === "Engineer").length;
+   return {
+     counts,
+     team: {
+       activeMembers: active,
+       checkedIn: engineers.filter(engineer => engineer.active && engineer.attendanceStatus === "Present").length,
+       absent: engineers.filter(engineer => engineer.active && engineer.absent).length,
+       notCheckedIn: engineers.filter(engineer => engineer.active && engineer.attendanceStatus !== "Present" && !engineer.absent).length,
+       approvedLeavePersonDays: 0,
+       capacityPersonDays: active,
+       shrinkagePercent: 0,
+     },
+     rows,
+   };
+ }, [demoMode, area, canManage, calls, engineers, reportStart, reportEnd]);
+ const visibleReportData = demoMode ? demoReportData : reportData;
+
  useEffect(() => {
-   if(area!=="Reports"||!(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")) return;
-   let alive=true;
-   if(demoMode){
-     const rows=calls.filter(c=>c.date>=reportStart&&c.date<=reportEnd).map(c=>({id:c.id,caseNumber:c.caseNumber,kind:c.kind,engineer:c.engineer,scheduledStartAt:new Date(`${c.date}T${c.time}:00+05:30`).toISOString(),status:c.status,lateOrMissed:c.status!=="Completed"&&c.status!=="Cancelled"&&c.date<localDate(),manual:Boolean(c.manual),notes:c.notes}));
-     const counts={total:rows.length,completed:rows.filter(x=>x.status==="Completed").length,scheduled:rows.filter(x=>x.status==="Scheduled").length,inProgress:rows.filter(x=>x.status==="In Progress").length,needsAttention:rows.filter(x=>x.status==="Needs attention").length,cancelled:rows.filter(x=>x.status==="Cancelled").length,lateOrMissed:rows.filter(x=>x.lateOrMissed).length};
-     const active=engineers.filter(e=>e.active&&e.role==="Engineer").length;
-     if(alive)setReportData({counts,team:{activeMembers:active,checkedIn:engineers.filter(e=>e.active&&e.attendanceStatus==="Present").length,absent:engineers.filter(e=>e.active&&e.absent).length,notCheckedIn:engineers.filter(e=>e.active&&e.attendanceStatus!=="Present"&&!e.absent).length,approvedLeavePersonDays:0,capacityPersonDays:active,shrinkagePercent:active?0:0},rows});
-     return()=>{alive=false;};
-   }
-   (async()=>{try{
-     const response=await fetch(`/api/reports?start=${reportStart}&end=${reportEnd}`,{cache:"no-store"});
-     const data=await response.json();
-     if(!response.ok) throw new Error(data.error??"Could not load report.");
-     if(alive) setReportData(data);
-   }catch(error){if(alive)setNotice(error instanceof Error?error.message:"Could not load report.");}})();
-   return()=>{alive=false;};
- },[area,sessionUser,reportStart,reportEnd,reportRefreshKey,demoMode,calls,engineers]);
+   if (area !== "Reports" || !canManage || demoMode) return;
+   let alive = true;
+   (async () => {
+     try {
+       const response = await fetch(`/api/reports?start=${reportStart}&end=${reportEnd}`, { cache: "no-store" });
+       const data = await response.json();
+       if (!response.ok) throw new Error(data.error ?? "Could not load report.");
+       if (alive) setReportData(data);
+     } catch (error) {
+       if (alive) setNotice(error instanceof Error ? error.message : "Could not load report.");
+     }
+   })();
+   return () => {
+     alive = false;
+   };
+ }, [area, canManage, reportStart, reportEnd, reportRefreshKey, demoMode]);
 const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.status!=="Cancelled"&&minutesLate(c)>=5);
  const escalatedCalls = thresholdCalls.filter(c=>minutesLate(c)>=10);
  const getNext = (rotation:Rotation) => {
@@ -290,25 +344,63 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
      setNotice(`Assignment ${call.caseNumber} updated to ${status}.`);
    } catch(error) { setNotice(error instanceof Error?error.message:"Could not update assignment."); }
  };
+ const signIn = async (event:FormEvent<HTMLFormElement>) => {
+   event.preventDefault();
+   setLoginBusy(true);
+   setNotice("");
+   try {
+     const response = await fetch("/api/auth/login", {
+       method: "POST",
+       headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+     });
+     const data = await response.json();
+     if (!response.ok || !data.user) throw new Error(data.error ?? "Sign-in failed.");
+     setCurrentUser(data.user as SessionUser);
+     setLoginPassword("");
+     await loadWorkspace();
+     setNotice(`Signed in as ${data.user.name}.`);
+   } catch (error) {
+     setNotice(error instanceof Error ? error.message : "Sign-in failed.");
+   } finally {
+     setLoginBusy(false);
+   }
+ };
+ const signOut = async () => {
+   try {
+     await fetch("/api/auth/logout", { method: "POST" });
+   } finally {
+     setCurrentUser(null);
+     setEngineers([]);
+     setCalls([]);
+     setLeaves([]);
+     setReportData(null);
+     setDemoMode(false);
+     setArea("Overview");
+     setNotice("");
+   }
+ };
  const nav: {label:Area;icon:typeof LayoutDashboard}[]=[{label:"Overview",icon:LayoutDashboard},{label:"Assignments",icon:CalendarDays},{label:"Team",icon:Users},{label:"Leaves",icon:CalendarDays},{label:"Reports",icon:FileBarChart2}];
+ if (authLoading) return <main className="min-h-screen bg-slate-50 px-5 py-12 text-slate-900"><section className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-7 shadow-sm"><h1 className="text-xl font-semibold">CallFlow</h1><p className="mt-3 text-sm text-slate-600">Checking your session…</p></section></main>;
+ if (!currentUser) return <main className="min-h-screen bg-slate-50 px-5 py-12 text-slate-900"><section className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-7 shadow-sm"><p className="text-sm font-semibold uppercase tracking-wide text-slate-500">CallFlow</p><h1 className="mt-2 text-2xl font-semibold">Sign in</h1><p className="mt-2 text-sm leading-6 text-slate-600">Use your CallFlow account credentials.</p><form className="mt-6 space-y-4" onSubmit={signIn}><label className="block text-sm font-medium">Work email<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="email" autoComplete="username" required value={loginEmail} onChange={event=>setLoginEmail(event.target.value)}/></label><label className="block text-sm font-medium">Password<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="current-password" required value={loginPassword} onChange={event=>setLoginPassword(event.target.value)}/></label><button disabled={loginBusy} className="w-full rounded-lg bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50" type="submit">{loginBusy?"Signing in…":"Sign in"}</button></form>{notice&&<p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm leading-6 text-rose-800">{notice}</p>}<p className="mt-5 text-sm text-slate-600">First-time setup? <a className="font-semibold underline" href="/setup-manager">Create the initial Manager account</a>.</p></section></main>;
  return <main className="minimal-app">
   <header className="minimal-header">
    <a className="brand" href="#" onClick={e=>{e.preventDefault();setArea("Overview");}}><span className="brand-mark"><Activity size={19}/></span><span>CallFlow</span></a>
    <nav className="top-nav" aria-label="Main navigation">{nav.map(n=><button key={n.label} onClick={()=>setArea(n.label)} className={area===n.label?"selected":""}>{n.label}</button>)}</nav>
-   <button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button><div className="session-chip"><span>{demoMode?"Local demo mode":"Development mode"}</span></div>
+   {canManage&&<button className="button primary compact" onClick={()=>{setShowNew(true);setNotice("");}}><Plus size={16}/> New assignment</button>}<div className="session-chip"><span>{sessionUser.name} · {sessionUser.role}{demoMode?" · Local demo":""}</span></div><button className="button subtle compact" onClick={signOut}><LogOut size={15}/> Sign out</button>
   </header>
   <div className="page-wrap">
    {notice&&<div className="notice" role="status"><span>{notice}</span>{engineers.length===0&&calls.length===0&&<button className="button primary compact" onClick={seedDemoData}>Load demo data</button>}<button aria-label="Dismiss" onClick={()=>setNotice("")}><X size={15}/></button></div>}
    {area==="Overview"&&thresholdCalls.length>0&&<div className={escalatedCalls.length?"alert-banner alert-critical":"alert-banner alert-warning"} role="alert"><span className="alert-symbol"><Activity size={19}/></span><div className="alert-copy"><strong>{escalatedCalls.length? "Escalation required":"Calls running late"}</strong><span>{escalatedCalls.length? `${escalatedCalls.length} call(s) have crossed the 10-minute escalation threshold.`:`${thresholdCalls.length} call(s) are at least 5 minutes past their scheduled time.`}</span></div><button className="alert-action" onClick={()=>{setArea("Assignments");setStatusFilter("All");setQuery("");}}>Review calls</button></div>}
    {area==="Overview"&&<>
-    <div className="page-heading"><div><p className="eyebrow">{today}</p><h1>Overview</h1><p className="muted">Today's call assignment activity.</p></div><button className="button primary" onClick={()=>setShowNew(true)}><Plus size={16}/> New assignment</button></div>
+    <div className="page-heading"><div><p className="eyebrow">{today}</p><h1>Overview</h1><p className="muted">Today&apos;s call assignment activity.</p></div>{canManage&&<button className="button primary" onClick={()=>setShowNew(true)}><Plus size={16}/> New assignment</button>}</div>
     <section className="metric-grid tl-metrics">
      {[{label:"Present",value:engineers.filter(e=>e.active&&e.attendanceStatus==="Present").length,tone:"green",action:()=>{setArea("Team");setTeamView("Attendance");}},{label:"Absent",value:engineers.filter(e=>e.active&&(e.absent||e.attendanceStatus==="Absent")).length,tone:"red",action:()=>{setArea("Team");setTeamView("Attendance");}},{label:"Manual assignments",value:calls.filter(c=>c.date===today&&c.manual).length,tone:"blue",action:()=>{setArea("Assignments");setQuery("");setStatusFilter("All");}},{label:"Prescheduled calls",value:calls.filter(c=>c.date===today&&c.status==="Scheduled").length,tone:"purple",action:()=>{setArea("Assignments");setAssignmentView("Schedule");setStatusFilter("Scheduled");}},{label:"Urgent",value:calls.filter(c=>c.date===today&&(c.status==="Needs attention"||minutesLate(c)>=10)&&c.status!=="Completed"&&c.status!=="Cancelled").length,tone:"red",action:()=>{setArea("Assignments");setStatusFilter("Needs attention");}},{label:"In progress",value:calls.filter(c=>c.date===today&&c.status==="In Progress").length,tone:"amber",action:()=>{setArea("Assignments");setStatusFilter("In Progress");}}].map(m=><button className={"metric metric-"+m.tone} key={m.label} onClick={m.action}><span>{m.label}</span><strong>{m.value}</strong><small>View details →</small></button>)}
     </section>
     <section className="surface"><div className="section-head"><div><h2>Urgent attention</h2><p className="muted">Escalations first, then calls needing follow-up.</p></div><button className="text-button" onClick={()=>{setArea("Assignments");setStatusFilter("Needs attention");setQuery("");}}>Review all →</button></div>
      {(()=>{const urgent=calls.filter(c=>c.date===today&&c.status!=="Completed"&&c.status!=="Cancelled"&&(c.status==="Needs attention"||minutesLate(c)>=10)).sort((a,b)=>minutesLate(b)-minutesLate(a));return urgent.length?<CallTable calls={urgent.slice(0,5)} onStatus={changeStatus} emptyMessage="No urgent calls."/>:<p className="empty">No urgent calls right now.</p>})()}
     </section>
-    <section className="surface"><div className="section-head"><div><h2>Today's prescheduled calls</h2><p className="muted">Upcoming calls and their current owners.</p></div><button className="text-button" onClick={()=>{setArea("Assignments");setAssignmentView("Schedule");setStatusFilter("All");}}>Full schedule →</button></div>
+    <section className="surface"><div className="section-head"><div><h2>Today&apos;s prescheduled calls</h2><p className="muted">Upcoming calls and their current owners.</p></div><button className="text-button" onClick={()=>{setArea("Assignments");setAssignmentView("Schedule");setStatusFilter("All");}}>Full schedule →</button></div>
      <CallTable calls={calls.filter(c=>c.date===today&&c.status!=="Cancelled").slice().sort((a,b)=>a.time.localeCompare(b.time)).slice(0,8)} onStatus={changeStatus}/>
      {calls.filter(c=>c.date===today&&c.status!=="Cancelled").length===0&&<p className="empty">No calls scheduled for today.</p>}
     </section>
@@ -319,7 +411,7 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
      <div className="queue-grid">{(["FE_CRU_EVENT","FTS"] as Rotation[]).map(r=><div className="queue" key={r}><div><h3>{r==="FTS"?"FTS monitoring":"FE · CRU · Event"}</h3><p className="muted">{r==="FTS"?"Follow-the-sun queue":"Shared customer-call queue"}</p></div><div className="queue-bottom"><span>{engineers.filter(e=>e.active&&e.role==="Engineer"&&(r==="FTS"?e.ftsQueue:e.callQueue)).length} eligible engineers</span><button className="button subtle" onClick={()=>skipNext(r)}><SkipForward size={14}/> Skip next</button></div><p className="next-up">Next: {getNext(r)?.name??"No eligible engineer"}</p></div>)}</div>
     </section>
    </>}
-   {area==="Assignments"&&<><div className="page-heading"><div><p className="eyebrow">WORKSPACE</p><h1>Assignments</h1><p className="muted">Create, schedule and update call assignments in one place.</p></div><button className="button primary" onClick={()=>setShowNew(true)}><Plus size={16}/> New assignment</button></div>
+   {area==="Assignments"&&<><div className="page-heading"><div><p className="eyebrow">WORKSPACE</p><h1>Assignments</h1><p className="muted">Create, schedule and update call assignments in one place.</p></div>{canManage&&<button className="button primary" onClick={()=>setShowNew(true)}><Plus size={16}/> New assignment</button>}</div>
     <div className="toolbar"><div className="segmented">{(["All","Schedule"] as const).map(v=><button key={v} className={assignmentView===v?"active":""} onClick={()=>setAssignmentView(v)}>{v==="All"?"All assignments":"Schedule"}</button>)}</div><label className="search-box"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search case, engineer, notes"/></label><select aria-label="Filter by status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value as typeof statusFilter)}><option value="All">All statuses</option>{(["Scheduled","In Progress","Completed","Needs attention","Cancelled"] as Status[]).map(s=><option key={s}>{s}</option>)}</select></div>
     <section className="surface table-surface"><CallTable calls={filtered.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time))} onStatus={changeStatus} emptyMessage="No assignments match these filters."/></section>
    </>}
@@ -337,10 +429,10 @@ const thresholdCalls = calls.filter(c=>c.date<=today&&c.status!=="Completed"&&c.
    </>}
    {area==="Reports"&&<><div className="page-heading"><div><p className="eyebrow">REPORTING</p><h1>Reports</h1><p className="muted">Calls addressed, overdue work, attendance and leave shrinkage from saved records.</p></div></div>
     {(sessionUser.role==="Manager"||sessionUser.role==="Team Lead")?<><section className="surface"><div className="toolbar"><label>From <input type="date" value={reportStart} max={reportEnd} onChange={e=>setReportStart(e.target.value)}/></label><label>To <input type="date" value={reportEnd} min={reportStart} onChange={e=>setReportEnd(e.target.value)}/></label><button className="button subtle" onClick={()=>{setReportData(null);setReportRefreshKey(v=>v+1);}}>Refresh report</button></div></section>
-    {reportData?<><section className="metric-grid">{[{label:"Calls scheduled",value:reportData.counts.total},{label:"Completed",value:reportData.counts.completed},{label:"In progress",value:reportData.counts.inProgress},{label:"Needs attention",value:reportData.counts.needsAttention},{label:"Late / missed",value:reportData.counts.lateOrMissed}].map(m=><div className="metric report-metric" key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</section>
-    <section className="metric-grid">{[{label:"Active team",value:reportData.team.activeMembers},{label:"Checked in",value:reportData.team.checkedIn},{label:"Absent",value:reportData.team.absent},{label:"Approved leave days",value:reportData.team.approvedLeavePersonDays},{label:"Shrinkage",value:reportData.team.shrinkagePercent+"%"}].map(m=><div className="metric report-metric" key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</section>
-    <section className="surface table-surface"><div className="section-head"><div><h2>Assignment outcomes</h2><p className="muted">Server-generated from persisted assignments for the selected period.</p></div><button className="button subtle" onClick={()=>{const rows=[["Assignment","Case","Type","Engineer","Scheduled","Status","Late/missed","Manual","Notes"],...reportData.rows.map(r=>[r.id,r.caseNumber,r.kind,r.engineer,r.scheduledStartAt,r.status,r.lateOrMissed?"Yes":"No",r.manual?"Yes":"No",r.notes])];const csv=rows.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(",")).join("\n");const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="callflow-report.csv";a.click();URL.revokeObjectURL(url);}}>Export CSV</button></div>
-    <div className="table-scroll"><table className="data-table"><thead><tr><th>Case</th><th>Type</th><th>Engineer</th><th>Scheduled</th><th>Status</th><th>Late / missed</th></tr></thead><tbody>{reportData.rows.map(row=><tr key={row.id}><td><strong>{row.caseNumber}</strong><small>{row.id}</small></td><td>{row.kind}</td><td>{row.engineer}</td><td>{dateTimeParts(row.scheduledStartAt).date} {dateTimeParts(row.scheduledStartAt).time}</td><td><Pill status={row.status}>{row.status}</Pill></td><td>{row.lateOrMissed?<Pill status="Needs attention">Yes</Pill>:"No"}</td></tr>)}</tbody></table></div></section></>:<p className="empty">Loading report…</p>}</>:<section className="surface"><p className="muted">Reports are available to Managers and Team Leads.</p></section>}
+    {visibleReportData?<><section className="metric-grid">{[{label:"Calls scheduled",value:visibleReportData.counts.total},{label:"Completed",value:visibleReportData.counts.completed},{label:"In progress",value:visibleReportData.counts.inProgress},{label:"Needs attention",value:visibleReportData.counts.needsAttention},{label:"Late / missed",value:visibleReportData.counts.lateOrMissed}].map(m=><div className="metric report-metric" key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</section>
+    <section className="metric-grid">{[{label:"Active team",value:visibleReportData.team.activeMembers},{label:"Checked in",value:visibleReportData.team.checkedIn},{label:"Absent",value:visibleReportData.team.absent},{label:"Approved leave days",value:visibleReportData.team.approvedLeavePersonDays},{label:"Shrinkage",value:visibleReportData.team.shrinkagePercent+"%"}].map(m=><div className="metric report-metric" key={m.label}><span>{m.label}</span><strong>{m.value}</strong></div>)}</section>
+    <section className="surface table-surface"><div className="section-head"><div><h2>Assignment outcomes</h2><p className="muted">Server-generated from persisted assignments for the selected period.</p></div><button className="button subtle" onClick={()=>{const rows=[["Assignment","Case","Type","Engineer","Scheduled","Status","Late/missed","Manual","Notes"],...visibleReportData.rows.map(r=>[r.id,r.caseNumber,r.kind,r.engineer,r.scheduledStartAt,r.status,r.lateOrMissed?"Yes":"No",r.manual?"Yes":"No",r.notes])];const csv=rows.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(",")).join("\n");const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="callflow-report.csv";a.click();URL.revokeObjectURL(url);}}>Export CSV</button></div>
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>Case</th><th>Type</th><th>Engineer</th><th>Scheduled</th><th>Status</th><th>Late / missed</th></tr></thead><tbody>{visibleReportData.rows.map(row=><tr key={row.id}><td><strong>{row.caseNumber}</strong><small>{row.id}</small></td><td>{row.kind}</td><td>{row.engineer}</td><td>{dateTimeParts(row.scheduledStartAt).date} {dateTimeParts(row.scheduledStartAt).time}</td><td><Pill status={row.status}>{row.status}</Pill></td><td>{row.lateOrMissed?<Pill status="Needs attention">Yes</Pill>:"No"}</td></tr>)}</tbody></table></div></section></>:<p className="empty">Loading report…</p>}</>:<section className="surface"><p className="muted">Reports are available to Managers and Team Leads.</p></section>}
    </>}
    <p className="footnote">CallFlow operational workspace · Times displayed in IST</p>
   </div>

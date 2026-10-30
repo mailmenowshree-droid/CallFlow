@@ -8,8 +8,9 @@ export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "no-store" };
 const roles: EngineerRole[] = ["Engineer", "SSE", "Team Lead", "Manager"];
 
-export async function PATCH(request: NextRequest, context: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params;
     const actor = await requireSession(["Team Lead", "Manager"]);
     let body: unknown;
     try {
@@ -38,7 +39,7 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
     try {
       await session.withTransaction(async () => {
         const collection = db.collection<EngineerRecord>("engineers");
-        const current = await collection.findOne({ id: context.params.id }, { session });
+        const current = await collection.findOne({ id: id }, { session });
         if (!current) throw new Error("NOT_FOUND");
         const nextRole = (value.role as EngineerRole | undefined) ?? current.role;
         const callQueue = (value.callQueue as boolean | undefined) ?? current.callQueue;

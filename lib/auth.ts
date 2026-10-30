@@ -31,10 +31,9 @@ export async function createSessionToken(user: SessionUser): Promise<string> {
 }
 
 export async function readSession(): Promise<SessionUser | null> {
-  // Temporary development mode: preview builds use a fixed Manager identity so
-  // the main application can be developed without the login module. Never enable
-  // this on production deployments.
-  if (process.env.VERCEL_ENV === "preview" || process.env.NODE_ENV === "development") {
+  // Local development may use a fixed identity. Deployed preview and production
+  // environments always require a valid signed-in user.
+  if (process.env.NODE_ENV === "development") {
     return {
       id: "callflow-preview-manager",
       email: "preview-manager@callflow.local",
@@ -42,7 +41,7 @@ export async function readSession(): Promise<SessionUser | null> {
       role: "Manager",
     };
   }
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, getSessionSecret(), {

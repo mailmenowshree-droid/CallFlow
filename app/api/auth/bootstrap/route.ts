@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { hash } from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureCallFlowIndexes, getDatabase, getMongoClient } from "@/lib/mongodb";
+import { isValidPassword } from "@/lib/password-policy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +16,9 @@ export async function POST(request: NextRequest) {
   }
 
   const suppliedToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (suppliedToken.length !== expectedToken.length ||
-      !Buffer.from(suppliedToken).equals(Buffer.from(expectedToken))) {
+  const expectedBytes = Buffer.from(expectedToken);
+  const suppliedBytes = Buffer.from(suppliedToken);
+  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) {
     return NextResponse.json({ error: "Not authorized." }, { status: 401, headers: noStore });
   }
 
@@ -33,8 +35,8 @@ export async function POST(request: NextRequest) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const name = typeof input.name === "string" ? input.name.trim() : "";
   const password = typeof input.password === "string" ? input.password : "";
-  if (email !== expectedEmail || !name || name.length > 120 || password.length < 4 || password.length > 1024) {
-    return NextResponse.json({ error: "Use the configured email, a valid name, and a password of at least 4 characters." }, { status: 400, headers: noStore });
+  if (email !== expectedEmail || !name || name.length > 120 || !isValidPassword(password)) {
+    return NextResponse.json({ error: "Use the configured email, a valid name, and a password of at least 14 characters." }, { status: 400, headers: noStore });
   }
 
   try {

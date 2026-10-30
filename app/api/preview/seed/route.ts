@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/auth";
+import { isPreviewSeedEnabled } from "@/lib/preview-seed-policy";
 import { getDatabase, getMongoClient } from "@/lib/mongodb";
-import type { EngineerRecord, AssignmentRecord, RotationKey } from "@/lib/callflow-types";
+import type { EngineerRecord, AssignmentRecord, RotationKey, RotationRecord } from "@/lib/callflow-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,8 +13,24 @@ const headers = { "Cache-Control": "no-store" };
  * Deliberately unavailable outside Vercel Preview; it never deletes existing records.
  */
 export async function POST() {
-  if (process.env.VERCEL_ENV !== "preview") {
-    return NextResponse.json({ error: "Preview-only endpoint." }, { status: 404, headers });
+  if (!isPreviewSeedEnabled({
+    vercelEnv: process.env.VERCEL_ENV,
+    enabled: process.env.CALLFLOW_PREVIEW_SEED_ENABLED,
+    databaseName: process.env.MONGODB_DB,
+  })) {
+    return NextResponse.json({ error: "Preview seeding is not enabled for this database." }, { status: 404, headers });
+  }
+
+  let actor;
+  try {
+    actor = await requireSession(["Manager"]);
+  } catch (error) {
+    const unauthenticated = error instanceof Error && error.message === "UNAUTHENTICATED";
+    const forbidden = error instanceof Error && error.message === "FORBIDDEN";
+    return NextResponse.json(
+      { error: unauthenticated ? "Sign in required." : "Only a Manager can seed preview data." },
+      { status: unauthenticated ? 401 : forbidden ? 403 : 503, headers },
+    );
   }
 
   const db = await getDatabase();
@@ -48,31 +66,31 @@ export async function POST() {
       id: "demo-assignment-completed", requestId: "demo-request-completed", rotation: "FE_CRU_EVENT",
       kind: "FE", caseNumber: "DEMO-1001", scheduledStartAt: atIst(-1, 10, 0), scheduledEndAt: atIst(-1, 10, 30),
       engineerId: "demo-eng-01", status: "Completed", notes: "Synthetic sample: completed field escalation.",
-      createdBy: "callflow-preview-manager", createdAt: now, updatedAt: now, completedAt: atIst(-1, 10, 24),
+      createdBy: actor.id, createdAt: now, updatedAt: now, completedAt: atIst(-1, 10, 24),
     },
     {
       id: "demo-assignment-fts", requestId: "demo-request-fts", rotation: "FTS",
       kind: "FTS", caseNumber: "DEMO-1002", scheduledStartAt: atIst(0, 9, 0), scheduledEndAt: atIst(0, 9, 30),
       engineerId: "demo-eng-02", status: "Completed", notes: "Synthetic sample: completed FTS monitoring call.",
-      createdBy: "callflow-preview-manager", createdAt: now, updatedAt: now, completedAt: atIst(0, 9, 26),
+      createdBy: actor.id, createdAt: now, updatedAt: now, completedAt: atIst(0, 9, 26),
     },
     {
       id: "demo-assignment-attention", requestId: "demo-request-attention", rotation: "FE_CRU_EVENT",
       kind: "CRU", caseNumber: "DEMO-1003", scheduledStartAt: new Date(now.getTime() - 20 * 60 * 1000), scheduledEndAt: new Date(now.getTime() + 10 * 60 * 1000),
       engineerId: "demo-eng-03", status: "Needs attention", notes: "Synthetic sample: use this record to test the urgent-call alert.",
-      createdBy: "callflow-preview-manager", createdAt: now, updatedAt: now,
+      createdBy: actor.id, createdAt: now, updatedAt: now,
     },
     {
       id: "demo-assignment-scheduled", requestId: "demo-request-scheduled", rotation: "FTS",
       kind: "FTS", caseNumber: "DEMO-1004", scheduledStartAt: atIst(0, 23, 30), scheduledEndAt: atIst(1, 0, 0),
       engineerId: "demo-eng-06", status: "Scheduled", notes: "Synthetic sample: scheduled call for calendar and assignment testing.",
-      createdBy: "callflow-preview-manager", createdAt: now, updatedAt: now,
+      createdBy: actor.id, createdAt: now, updatedAt: now,
     },
     {
       id: "demo-assignment-manual", requestId: "demo-request-manual", rotation: "FE_CRU_EVENT",
       kind: "Event", caseNumber: "DEMO-1005", scheduledStartAt: atIst(1, 11, 0), scheduledEndAt: atIst(1, 11, 30),
       engineerId: "demo-sse-01", manual: true, status: "Scheduled", notes: "Synthetic sample: manually assigned to SSE.",
-      createdBy: "callflow-preview-manager", createdAt: now, updatedAt: now,
+      createdBy: actor.id, createdAt: now, updatedAt: now,
     },
   ];
 
@@ -95,7 +113,7 @@ export async function POST() {
         FE_CRU_EVENT: roster.filter(e => e.callQueue && e.role === "Engineer").map(e => e.id),
         FTS: roster.filter(e => e.ftsQueue && e.role === "Engineer").map(e => e.id),
       } satisfies Record<RotationKey, string[]>;
-      const rotations = db.collection("rotation_state");
+      const rotations = db.collection<RotationRecord>("rotation_state");
       for (const key of ["FE_CRU_EVENT", "FTS"] as const) {
         await rotations.updateOne(
           { _id: key },
@@ -111,7 +129,7 @@ export async function POST() {
         reason: "Synthetic preview data for leave approval testing.", status: "Pending", createdAt: now, updatedAt: now,
       }, { session });
       await db.collection("audit_events").insertOne({
-        eventType: "PREVIEW_DEMO_DATA_SEEDED", entityId: markerId, actorId: "callflow-preview-manager",
+        eventType: "PREVIEW_DEMO_DATA_SEEDED", entityId: markerId, actorId: actor.id,
         occurredAt: now, metadata: { engineerCount: roster.length, assignmentCount: assignments.length },
       }, { session });
     }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });

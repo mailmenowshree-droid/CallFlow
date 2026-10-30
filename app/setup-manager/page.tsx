@@ -4,6 +4,8 @@ import { FormEvent, useState } from "react";
 
 export default function SetupManagerPage() {
   const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -12,8 +14,8 @@ export default function SetupManagerPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    if (password.length < 4) {
-      setMessage("Use a password with at least 4 characters.");
+    if (password.length < 14) {
+      setMessage("Use a password with at least 14 characters.");
       return;
     }
     if (password !== confirmPassword) {
@@ -29,14 +31,14 @@ export default function SetupManagerPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          email: "sreekanth.mathangi@movate.com",
-          name: "Sreekanth Mathangi",
+          email,
+          name,
           password,
         }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not create Manager account.");
-      setMessage("Manager account created. Remove CALLFLOW_BOOTSTRAP_TOKEN and BOOTSTRAP_MANAGER_EMAIL from Vercel Preview environment variables, redeploy the preview, then sign in with your email and the password you just created.");
+      setMessage("Manager account created. Remove CALLFLOW_BOOTSTRAP_TOKEN and BOOTSTRAP_MANAGER_EMAIL from the deployed environment, redeploy, then sign in from the CallFlow home page.");
       setToken("");
       setPassword("");
       setConfirmPassword("");
@@ -53,20 +55,28 @@ export default function SetupManagerPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">CallFlow · Initial setup</p>
         <h1 className="mt-2 text-2xl font-semibold">Create Manager account</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          One-time setup for sreekanth.mathangi@movate.com. This is a test Manager account; use a password you can change later.
+          One-time creation of the initial Manager account. The configured bootstrap email must match the email entered below.
         </p>
         <form className="mt-6 space-y-4" onSubmit={submit}>
+          <label className="block text-sm font-medium">
+            Manager name
+            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="text" autoComplete="name" maxLength={120} required value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label className="block text-sm font-medium">
+            Manager email
+            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
           <label className="block text-sm font-medium">
             Temporary setup token
             <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="off" required value={token} onChange={(event) => setToken(event.target.value)} />
           </label>
           <label className="block text-sm font-medium">
-            New password (4+ characters)
-            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={4} required value={password} onChange={(event) => setPassword(event.target.value)} />
+            New password (14+ characters)
+            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={14} maxLength={1024} required value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
           <label className="block text-sm font-medium">
             Confirm password
-            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={4} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" type="password" autoComplete="new-password" minLength={14} maxLength={1024} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
           </label>
           <button disabled={busy} className="w-full rounded-lg bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50" type="submit">
             {busy ? "Creating account…" : "Create Manager account"}
