@@ -191,7 +191,7 @@ try {
   );
   const readOnlyManagerRow = page.getByRole("row").filter({ hasText: manager.name });
   assert.equal(await readOnlyManagerRow.getByText("Manager", { exact: true }).count(), 1, "Team Lead can see the privileged role.");
-  assert.equal(await readOnlyManagerRow.getByLabel(`Role for ${managerProfileName}`).count(), 0, "Team Lead cannot edit a Manager role.");
+  assert.equal(await readOnlyManagerRow.getByLabel(`Role for ${manager.name}`).count(), 0, "Team Lead cannot edit a Manager role.");
   assert.equal(await readOnlyManagerRow.locator(".queue-checks").count(), 0, "Team Lead cannot edit privileged queue membership.");
   assert.equal(await readOnlyManagerRow.getByRole("button", { name: "Mark absent" }).count(), 0, "Team Lead cannot mutate a privileged profile from the roster.");
   const ownTeamLeadProfileRow = page.getByRole("row").filter({ hasText: teamLead.name });
