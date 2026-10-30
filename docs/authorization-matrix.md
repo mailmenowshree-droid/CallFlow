@@ -1,8 +1,8 @@
 # CallFlow Authorization Matrix
 
-Reviewed: 2026-10-30  
+Reviewed: 2026-10-31  
 Baseline: `feature/mongodb-foundation`  
-Current implementation under review: PR #5, stacked on PR #4 and PR #3.
+Current implementation under review: PR #6, stacked on PR #5, PR #4, and PR #3.
 
 This document records the server-side access rules. UI visibility is a usability layer only; route handlers enforce authorization independently.
 
@@ -53,13 +53,14 @@ Additional constraints:
 ## Automated evidence
 
 - `tests/mongodb-integration.test.ts` covers Manager/Team Lead restrictions, linked privileged team profiles, self-approval denial at the leave route, Team Lead privilege escalation denial, SSE self-scoped roster/assignment/leave reads, own-assignment lifecycle updates, forbidden administrative actions, attendance transitions/concurrency, WFH quota concurrency, leave capacity/review, and temporary leave-exclusion authorization/auditing.
+- PR #6 adds MongoDB-backed negative coverage for Engineer/SSE denial across team management, rotation exclusions, assignment creation, rotation skip, reporting, and preview seeding; Team Lead/Engineer/SSE denial for login provisioning; self-scoped versus team-wide reads; cross-user assignment/attendance/leave mutation denial; Manager/Team Lead team attendance; and linked Manager/SSE leave self-service.
 - `tests/auth-session.test.ts` covers signed session validation, expiry/tampering, and inactive-user rejection.
 - `scripts/e2e-browser.mjs` exercises Manager bootstrap/login, linked Manager/Team Lead profiles, Manager account provisioning, Team Lead login/report access and own leave submission/cancellation without self-review controls, Engineer login/self-service, assignment lifecycle, attendance, leave approval, CSV download/content, logout, and the Team Lead roster role-control boundaries.
-- GitHub Actions run #366 passed on commit `ba43938066c16ce733c6d403c555cc469f8f7cd0`: `npm ci`, npm audit (0 vulnerabilities), typecheck, ESLint, 82 tests across 15 files, production build, HTTP E2E, and Chromium browser E2E.
+- GitHub Actions run #371 passed on PR #6 merge commit `26678d42aba01544ca54f0d0866f5ddffa87aef8` (head commit `5ec4145fb06556ee825c41dfd43a40f5ac53fd8a`): `npm ci`, npm audit (0 vulnerabilities), typecheck, ESLint, 86 tests across 15 files, production build, production HTTP E2E, and Chromium browser E2E.
 
 ## Remaining verification boundaries
 
-- This is a reviewed route matrix, not exhaustive automated coverage of every role/route pair. Critical allow/deny boundaries are tested; additional pairwise negative tests may still be warranted before production.
+- The route matrix now has broader negative tests, but it is not exhaustive automated coverage of every role/route pair. Review remaining route/role combinations before production.
 - Real Vercel Preview login has not been verified. It requires a dedicated Preview MongoDB database and a configured Manager test account/credentials.
 - Existing Manager/Team Lead accounts created before linked-profile provisioning may lack matching `EngineerRecord` rows. Verify the Preview database and approve an additive profile backfill if needed before testing their leave/attendance flows.
 - Production environment configuration and production deployment have not been verified or performed. Deployment requires explicit approval.
