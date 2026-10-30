@@ -42,7 +42,6 @@ export async function ensureCallFlowIndexes(): Promise<void> {
       db.collection("users").createIndex({ email: 1 }, { unique: true }),
       db.collection("assignments").createIndex({ requestId: 1 }, { unique: true, sparse: true }),
       db.collection("assignments").createIndex({ rotation: 1, status: 1, scheduledStartAt: 1 }),
-      db.collection("rotation_state").createIndex({ _id: 1 }, { unique: true }),
       db.collection("audit_events").createIndex({ occurredAt: -1 }),
       db.collection("wfh_quota").createIndex({ engineerId: 1, quarterStart: 1 }, { unique: true }),
       db.collection("attendance_events").createIndex(
