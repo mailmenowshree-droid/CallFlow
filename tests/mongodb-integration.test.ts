@@ -277,7 +277,7 @@ integration("MongoDB replica-set integration", () => {
     const rejectedEngineerId = acceptedLeave.engineerId === "eng-two" ? "eng-three" : "eng-two";
 
     setSession(acceptedLeave.engineerId, "Engineer");
-    const cancelled = await patchLeave(leavePatchRequest("Cancelled"), { params: { id: acceptedLeave.id } });
+    const cancelled = await patchLeave(leavePatchRequest("Cancelled"), { params: Promise.resolve({ id: acceptedLeave.id }) });
     expect(cancelled.status).toBe(200);
 
     setSession(rejectedEngineerId, "Engineer");
@@ -290,11 +290,11 @@ integration("MongoDB replica-set integration", () => {
     expect(retriedLeave).not.toBeNull();
 
     setSession("team-lead", "Team Lead");
-    const approved = await patchLeave(leavePatchRequest("Approved"), { params: { id: retriedLeave!.id } });
+    const approved = await patchLeave(leavePatchRequest("Approved"), { params: Promise.resolve({ id: retriedLeave!.id }) });
     expect(approved.status).toBe(200);
 
     setSession("team-lead", "Team Lead");
-    const reReview = await patchLeave(leavePatchRequest("Rejected"), { params: { id: retriedLeave!.id } });
+    const reReview = await patchLeave(leavePatchRequest("Rejected"), { params: Promise.resolve({ id: retriedLeave!.id }) });
     expect(reReview.status).toBe(409);
 
     expect(await db.collection("leave_requests").countDocuments({
